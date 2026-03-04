@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ActivityList from "./pages/ActivityList";
+import ActivityDetail from "./pages/ActivityDetail";
 
 const queryClient = new QueryClient();
 
@@ -33,7 +34,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<div className="p-4 text-gray-500">Dashboard coming soon</div>} />
               <Route path="/activities" element={<ActivityList />} />
-              <Route path="/activities/:id" element={<div className="p-4 text-gray-500">Activity detail coming soon</div>} />
+              <Route path="/activities/:id" element={<ActivityDetail />} />
               <Route path="/gear" element={<div className="p-4 text-gray-500">Gear page coming soon</div>} />
               <Route path="/goals" element={<div className="p-4 text-gray-500">Goals page coming soon</div>} />
               <Route path="/plans" element={<div className="p-4 text-gray-500">Plans page coming soon</div>} />

@@ -9,4 +9,14 @@ export default defineConfig({
       "/api": "http://localhost:8000",
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-leaflet": ["leaflet", "react-leaflet"],
+          "vendor-recharts": ["recharts", "react-is"],
+        },
+      },
+    },
+  },
 })
