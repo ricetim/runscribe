@@ -19,6 +19,9 @@ data/
 # Env
 .env
 
+# Books / reference PDFs (copyrighted)
+docs/*.pdf
+
 # IDE
 .vscode/
 .idea/
