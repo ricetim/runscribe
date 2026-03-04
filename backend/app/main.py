@@ -2,12 +2,24 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_db_and_tables
+from apscheduler.schedulers.background import BackgroundScheduler
+
+scheduler = BackgroundScheduler()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    from app.database import Session, engine
+    from app.routers.sync import _sync_strava_photos, _sync_coros
+    from app.config import STRAVA_REFRESH_TOKEN, COROS_EMAIL
+    if STRAVA_REFRESH_TOKEN:
+        scheduler.add_job(lambda: _sync_strava_photos(Session(engine)), "interval", hours=6)
+    if COROS_EMAIL:
+        scheduler.add_job(lambda: _sync_coros(Session(engine)), "interval", hours=6)
+    scheduler.start()
     yield
+    scheduler.shutdown()
 
 
 app = FastAPI(title="RunScribe", lifespan=lifespan)
@@ -20,9 +32,13 @@ app.add_middleware(
 )
 
 
-from app.routers import activities, stats
+from app.routers import activities, stats, sync, shoes, goals, plans
 app.include_router(activities.router)
 app.include_router(stats.router)
+app.include_router(sync.router)
+app.include_router(shoes.router)
+app.include_router(goals.router)
+app.include_router(plans.router)
 
 
 @app.get("/api/health")

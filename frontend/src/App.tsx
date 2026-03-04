@@ -3,6 +3,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ActivityList from "./pages/ActivityList";
 import ActivityDetail from "./pages/ActivityDetail";
 import Dashboard from "./pages/Dashboard";
+import Gear from "./pages/Gear";
+import Goals from "./pages/Goals";
+import Plans from "./pages/Plans";
+import PlanDetail from "./pages/PlanDetail";
 
 const queryClient = new QueryClient();
 
@@ -36,10 +40,10 @@ export default function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/activities" element={<ActivityList />} />
               <Route path="/activities/:id" element={<ActivityDetail />} />
-              <Route path="/gear" element={<div className="p-4 text-gray-500">Gear page coming soon</div>} />
-              <Route path="/goals" element={<div className="p-4 text-gray-500">Goals page coming soon</div>} />
-              <Route path="/plans" element={<div className="p-4 text-gray-500">Plans page coming soon</div>} />
-              <Route path="/plans/:id" element={<div className="p-4 text-gray-500">Plan detail coming soon</div>} />
+              <Route path="/gear" element={<Gear />} />
+              <Route path="/goals" element={<Goals />} />
+              <Route path="/plans" element={<Plans />} />
+              <Route path="/plans/:id" element={<PlanDetail />} />
             </Routes>
           </main>
         </div>
