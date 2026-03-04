@@ -18,4 +18,7 @@ allow for goal setting (mileage totals, etc) and tracking of those goals
 this should run as a docker container
 photos with gps data should be shown on the map for a workout 
 should include the creation of training plans for popular sources like daniels and pfitzinger
+research how running metrics are calculated from first principles
+	metrics of interest: VO2Max, race time predictions (5k/10k/half/marathon), training stress, lactate threshold, running economy
+	source research papers where possible; note any book sources so they can be procured
 
