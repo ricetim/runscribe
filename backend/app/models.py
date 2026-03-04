@@ -1,0 +1,108 @@
+from typing import Optional, List
+from datetime import datetime, date
+from sqlmodel import Field, SQLModel, Relationship
+
+
+class Activity(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source: str                          # "coros" | "strava" | "manual_upload"
+    external_id: Optional[str] = None
+    strava_id: Optional[str] = None
+    started_at: datetime
+    distance_m: float = 0.0
+    duration_s: int = 0
+    elevation_gain_m: float = 0.0
+    avg_hr: Optional[int] = None
+    avg_pace_s_per_km: Optional[float] = None
+    sport_type: str = "run"
+    fit_file_path: Optional[str] = None
+    notes: Optional[str] = None
+
+    datapoints: List["DataPoint"] = Relationship(back_populates="activity")
+    photos: List["Photo"] = Relationship(back_populates="activity")
+    activity_shoes: List["ActivityShoe"] = Relationship(back_populates="activity")
+
+
+class DataPoint(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    activity_id: int = Field(foreign_key="activity.id", index=True)
+    timestamp: datetime
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    distance_m: Optional[float] = None
+    speed_m_s: Optional[float] = None
+    heart_rate: Optional[int] = None
+    cadence: Optional[int] = None
+    altitude_m: Optional[float] = None
+    power_w: Optional[int] = None
+
+    activity: Optional[Activity] = Relationship(back_populates="datapoints")
+
+
+class Photo(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    activity_id: int = Field(foreign_key="activity.id", index=True)
+    strava_photo_id: Optional[str] = None
+    url: str
+    captured_at: Optional[datetime] = None
+    lat: Optional[float] = None          # EXIF GPS latitude
+    lon: Optional[float] = None          # EXIF GPS longitude
+
+    activity: Optional[Activity] = Relationship(back_populates="photos")
+
+
+class Shoe(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    brand: Optional[str] = None
+    retired: bool = False
+    notes: Optional[str] = None
+    retirement_threshold_km: float = 800.0
+
+    activity_shoes: List["ActivityShoe"] = Relationship(back_populates="shoe")
+
+
+class ActivityShoe(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    activity_id: int = Field(foreign_key="activity.id", index=True)
+    shoe_id: int = Field(foreign_key="shoe.id", index=True)
+
+    activity: Optional[Activity] = Relationship(back_populates="activity_shoes")
+    shoe: Optional[Shoe] = Relationship(back_populates="activity_shoes")
+
+
+class Goal(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    type: str                            # "weekly_distance" | "monthly_distance" | "annual_distance"
+    target_value: float
+    period_start: datetime
+    period_end: datetime
+    notes: Optional[str] = None
+
+
+class TrainingPlan(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    source: str                          # "daniels" | "pfitzinger"
+    goal_race_date: date
+    goal_distance: str                   # "5k" | "10k" | "half" | "marathon"
+    start_date: date
+    target_vdot: Optional[float] = None
+    peak_weekly_km: Optional[float] = None
+    notes: Optional[str] = None
+
+    workouts: List["PlannedWorkout"] = Relationship(back_populates="plan")
+
+
+class PlannedWorkout(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    training_plan_id: int = Field(foreign_key="trainingplan.id", index=True)
+    scheduled_date: date
+    week_number: int
+    workout_type: str
+    description: str
+    target_distance_m: Optional[float] = None
+    target_pace_s_per_km: Optional[float] = None
+    completed_activity_id: Optional[int] = Field(default=None, foreign_key="activity.id")
+
+    plan: Optional[TrainingPlan] = Relationship(back_populates="workouts")
