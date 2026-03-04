@@ -103,7 +103,7 @@ function TrainingLoadChart({ days }: { days: number }) {
         />
         <YAxis tick={{ fontSize: 10 }} />
         <Tooltip
-          formatter={(v: number | undefined, name: string | undefined) => [v != null ? v.toFixed(1) : "–", name?.toUpperCase() ?? ""]}
+          formatter={(v: unknown, name: string) => [(v as number)?.toFixed(1) ?? "–", name.toUpperCase()]}
           labelFormatter={(l) => `Date: ${l}`}
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />
