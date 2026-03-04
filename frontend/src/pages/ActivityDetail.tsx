@@ -72,6 +72,7 @@ export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const actId = Number(id);
   const [brushRange, setBrushRange] = useState<[number, number] | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const { data: act, isLoading: actLoading } = useQuery<Activity>({
     queryKey: ["activity", actId],
@@ -163,6 +164,7 @@ export default function ActivityDetail() {
           datapoints={datapoints}
           photos={photos}
           highlightRange={brushRange}
+          hoverIndex={hoverIndex}
         />
       )}
 
@@ -183,6 +185,7 @@ export default function ActivityDetail() {
           <ActivityCharts
             datapoints={datapoints}
             onRangeChange={(start, end) => setBrushRange([start, end])}
+            onHoverIndex={setHoverIndex}
           />
         </div>
       )}

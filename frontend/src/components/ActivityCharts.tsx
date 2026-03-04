@@ -15,6 +15,7 @@ import { DataPoint } from "../types";
 interface Props {
   datapoints: DataPoint[];
   onRangeChange?: (startIdx: number, endIdx: number) => void;
+  onHoverIndex?: (idx: number | null) => void;
 }
 
 type Overlay = "pace" | "hr" | "elevation" | "cadence" | "power";
@@ -52,7 +53,7 @@ interface ChartRow {
   power: number | null;
 }
 
-export default function ActivityCharts({ datapoints, onRangeChange }: Props) {
+export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex }: Props) {
   const [activeOverlays, setActiveOverlays] = useState<Set<Overlay>>(
     new Set(["pace", "hr", "elevation"])
   );
@@ -163,7 +164,12 @@ export default function ActivityCharts({ datapoints, onRangeChange }: Props) {
 
       {/* Main chart */}
       <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+        <LineChart
+          data={data}
+          margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
+          onMouseMove={(e: any) => onHoverIndex?.(e?.activeTooltipIndex ?? null)}
+          onMouseLeave={() => onHoverIndex?.(null)}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis
             dataKey="elapsed_s"

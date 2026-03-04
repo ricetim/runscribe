@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { DataPoint, Photo } from "../types";
@@ -25,6 +25,7 @@ interface Props {
   datapoints: DataPoint[];
   photos?: Photo[];
   highlightRange?: [number, number] | null;
+  hoverIndex?: number | null;
 }
 
 /** Fits the map to the track bounds whenever coords change. */
@@ -87,7 +88,7 @@ function buildPaceSegments(
   return segments;
 }
 
-export default function ActivityMap({ datapoints, photos = [], highlightRange }: Props) {
+export default function ActivityMap({ datapoints, photos = [], highlightRange, hoverIndex }: Props) {
   const coords: [number, number][] = useMemo(
     () =>
       datapoints
@@ -143,6 +144,19 @@ export default function ActivityMap({ datapoints, photos = [], highlightRange }:
       {highlighted.length > 1 && (
         <Polyline positions={highlighted} color="#f97316" weight={6} opacity={0.8} />
       )}
+
+      {/* Chart hover position */}
+      {hoverIndex != null && (() => {
+        const dp = datapoints[hoverIndex];
+        if (!dp || dp.lat == null || dp.lon == null) return null;
+        return (
+          <CircleMarker
+            center={[dp.lat, dp.lon]}
+            radius={7}
+            pathOptions={{ color: "#fff", fillColor: "#3b82f6", fillOpacity: 1, weight: 2 }}
+          />
+        );
+      })()}
 
       {/* GPS-tagged photo markers */}
       {gpsPhotos.map((photo) => (
