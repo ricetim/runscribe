@@ -68,6 +68,24 @@ No issues. 5 tests pass; 2 skip pending `sample.fit`.
 
 ---
 
+### Task 8 — Charts component
+
+**Issue: `ReferenceLine` unused import caused TypeScript error**
+- `tsc --strict` treats unused imports as errors
+- Fix: removed the unused import
+
+### Task 9 — Activity Detail
+
+**Issue: `recharts` failed to resolve `react-is` at build time**
+- `recharts` lists `react-is` as a peer dependency but it wasn't installed
+- Fix: `npm install react-is --legacy-peer-deps`
+
+**Issue: Bundle size warning — single chunk >500 kB**
+- leaflet (297 kB) + recharts (362 kB) bloated the main chunk
+- Fix: added `build.rollupOptions.output.manualChunks` in `vite.config.ts` to split into `vendor-leaflet` and `vendor-recharts` chunks; main bundle reduced from 792 kB to 132 kB
+
+---
+
 ## Running metrics research notes
 
 Research complete — see `docs/running_metrics_research.md`.
