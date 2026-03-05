@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import SQLModel, create_engine, Session, select
 from app.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -22,6 +22,12 @@ def create_db_and_tables():
         _add_column(conn, "datapoint", "stance_time_ms", "REAL")
         _add_column(conn, "activity", "rpe", "INTEGER")
         conn.commit()
+    # Seed singleton UserProfile if not present
+    from app.models import UserProfile
+    with Session(engine) as session:
+        if not session.get(UserProfile, 1):
+            session.add(UserProfile(id=1))
+            session.commit()
 
 
 def get_session():

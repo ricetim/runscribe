@@ -77,6 +77,14 @@ class ActivityShoe(SQLModel, table=True):
     shoe: Optional[Shoe] = Relationship(back_populates="activity_shoes")
 
 
+class UserProfile(SQLModel, table=True):
+    """Singleton row (id=1) storing user-specific physiology settings."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    hr_max: int = 185          # maximum heart rate (bpm)
+    hr_rest: int = 50          # resting heart rate (bpm)
+    weight_kg: Optional[float] = None
+
+
 class Goal(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     type: str                            # "weekly_distance" | "monthly_distance" | "annual_distance"

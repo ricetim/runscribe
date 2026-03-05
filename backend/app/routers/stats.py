@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Activity, DataPoint
+from app.models import Activity, DataPoint, UserProfile
 from app.services.analytics import (
     compute_vdot,
+    compute_vdot_hr_adjusted,
     compute_pace_zones,
     compute_trimp,
     compute_hrtss,
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 def _build_tss_by_date(session: Session) -> dict[date, float]:
     """Compute daily hrTSS for all activities using stored DataPoints."""
+    profile = session.get(UserProfile, 1) or UserProfile()
     acts = session.exec(select(Activity).order_by(Activity.started_at)).all()
     tss_by_date: dict[date, float] = {}
 
@@ -36,7 +38,7 @@ def _build_tss_by_date(session: Session) -> dict[date, float]:
         day = act.started_at.date()
         if act.avg_hr and act.duration_s:
             # Fast path: no datapoints needed — estimate from average HR
-            hr_rest, hr_max = 50, 190
+            hr_rest, hr_max = profile.hr_rest, profile.hr_max
             hr_range = hr_max - hr_rest
             delta_hr = max(0.0, min((act.avg_hr - hr_rest) / hr_range, 1.0))
             import math
@@ -122,35 +124,65 @@ def get_training_load(
 @router.get("/vdot")
 def get_vdot(session: Session = Depends(get_session)):
     """
-    Estimate current VDOT from the best recent performance.
-    Uses the activity with the highest VDOT in the last 90 days.
-    Returns VDOT + predicted race times + training pace zones.
+    Estimate current VDOT from recent training runs using HR-adjusted method.
+
+    Uses Swain (1994) %VO2max = 1.0197×%HRR + 0.01 to account for the fact
+    that training runs are run at sub-maximal effort. Takes the median of
+    all qualifying activities in the last 90 days (requires avg_hr data).
+
+    Falls back to the raw Daniels formula (best performance) only when no
+    HR data is available — this will underestimate VDOT for easy runs.
     """
+    profile = session.get(UserProfile, 1) or UserProfile()
+    hr_max = profile.hr_max
+    hr_rest = profile.hr_rest
+
     cutoff = date.today() - timedelta(days=90)
     acts = session.exec(
         select(Activity)
         .where(Activity.started_at >= cutoff.isoformat())
-        .where(Activity.distance_m >= 1000)
+        .where(Activity.distance_m >= 3000)   # at least 3km for meaningful estimate
         .where(Activity.duration_s > 0)
     ).all()
 
-    best_vdot = None
-    best_act_id = None
+    vdot_estimates = []
     for act in acts:
-        if act.distance_m > 0 and act.duration_s > 0:
+        if act.avg_hr and act.distance_m > 0 and act.duration_s > 0:
             try:
-                v = compute_vdot(act.distance_m, act.duration_s)
-                if best_vdot is None or v > best_vdot:
-                    best_vdot = v
-                    best_act_id = act.id
+                v = compute_vdot_hr_adjusted(
+                    act.distance_m, act.duration_s, act.avg_hr, hr_max, hr_rest
+                )
+                if 20 < v < 85:  # sanity range
+                    vdot_estimates.append((v, act.id))
             except ValueError:
                 pass
 
+    method = "hr_adjusted"
+    if vdot_estimates:
+        # Use median to reduce noise from unusually easy/hard days
+        vdot_estimates.sort(key=lambda x: x[0])
+        mid = len(vdot_estimates) // 2
+        best_vdot, best_act_id = vdot_estimates[mid]
+    else:
+        # Fallback: raw Daniels (accurate only for races/time-trials)
+        method = "raw_daniels_fallback"
+        best_vdot = None
+        best_act_id = None
+        for act in acts:
+            if act.distance_m > 0 and act.duration_s > 0:
+                try:
+                    v = compute_vdot(act.distance_m, act.duration_s)
+                    if best_vdot is None or v > best_vdot:
+                        best_vdot = v
+                        best_act_id = act.id
+                except ValueError:
+                    pass
+
     if best_vdot is None:
-        return {"vdot": None, "based_on_activity_id": None}
+        return {"vdot": None, "based_on_activity_id": None, "method": method,
+                "hr_max": hr_max, "hr_rest": hr_rest}
 
     zones = compute_pace_zones(best_vdot)
-
     from app.services.analytics import predict_race_time_s
     predictions = {}
     for name, dist in [("5k", 5000), ("10k", 10000), ("half", 21097), ("marathon", 42195)]:
@@ -163,6 +195,10 @@ def get_vdot(session: Session = Depends(get_session)):
     return {
         "vdot": round(best_vdot, 1),
         "based_on_activity_id": best_act_id,
+        "method": method,
+        "hr_max": hr_max,
+        "hr_rest": hr_rest,
+        "sample_size": len(vdot_estimates),
         "race_predictions_s": predictions,
         "pace_zones_s_per_km": {
             "easy_lo": round(zones.easy_lo),

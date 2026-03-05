@@ -6,6 +6,9 @@ Mathematical sources:
   VO2(V)      = -4.60 + 0.182258·V + 0.000104·V²      (V in m/min)
   %VO2max(T)  = 0.8 + 0.1894393·e^(-0.012778·T) + 0.2989558·e^(-0.1932605·T)  (T in min)
   Vel(VO2)    = 29.54 + 5.000663·VO2 - 0.007546·VO2²  (back-solve)
+- HR-adjusted VDOT: Swain DP et al. (1994). Target heart rates for the development of
+  cardiorespiratory fitness. Med Sci Sports Exerc. 26(1):112-116.
+  %VO2max = 1.0197 × %HRR + 0.01    where %HRR = (HR - HR_rest) / (HR_max - HR_rest)
 - ATL/CTL/TSB: Morton, Fitz-Clarke & Banister (1990), J Appl Physiol 69(3):1171-1177.
 - TRIMP:       Banister (1991) in MacDougall et al. (Eds.), Physiological Testing.
 - Training zones: Daniels (2022), Daniels' Running Formula 4th ed., Figure 4.1.
@@ -41,17 +44,11 @@ def _velocity_from_vo2(vo2: float) -> float:
 
 def compute_vdot(distance_m: float, time_s: float) -> float:
     """
-    Compute VDOT from a race/time trial result.
+    Compute VDOT from a race/time trial result (assumes full effort).
 
-    Args:
-        distance_m: race distance in metres
-        time_s:     race time in seconds
-
-    Returns:
-        VDOT value (performance-equivalent VO2max index)
-
-    Raises:
-        ValueError: if inputs are non-positive
+    NOTE: Use compute_vdot_hr_adjusted() for training runs — this formula
+    assumes the runner is racing at maximum sustainable effort for the
+    duration. Applying it to easy training runs will underestimate VDOT.
     """
     if distance_m <= 0 or time_s <= 0:
         raise ValueError("distance_m and time_s must be positive")
@@ -63,6 +60,42 @@ def compute_vdot(distance_m: float, time_s: float) -> float:
     if pct <= 0:
         raise ValueError("Duration too long for VDOT computation")
     return vo2 / pct
+
+
+def compute_vdot_hr_adjusted(
+    distance_m: float,
+    time_s: float,
+    avg_hr: float,
+    hr_max: int,
+    hr_rest: int = 50,
+) -> float:
+    """
+    HR-adjusted VDOT estimate for training runs at sub-maximal effort.
+
+    Uses Swain et al. (1994): %VO2max = 1.0197 × %HRR + 0.01
+    where %HRR = (HR_avg - HR_rest) / (HR_max - HR_rest)
+
+    Then VDOT = VO2_at_pace / %VO2max
+
+    This gives accurate VDOT estimates from easy/moderate training runs
+    provided hr_max and hr_rest are set correctly.
+    """
+    if distance_m <= 0 or time_s <= 0:
+        raise ValueError("distance_m and time_s must be positive")
+    hr_range = hr_max - hr_rest
+    if hr_range <= 0:
+        raise ValueError("hr_max must be greater than hr_rest")
+
+    v_m_min = distance_m / (time_s / 60.0)
+    vo2_at_pace = _vo2_from_velocity(v_m_min)
+    if vo2_at_pace <= 0:
+        raise ValueError("Pace too slow for valid VO2 estimate")
+
+    pct_hrr = (avg_hr - hr_rest) / hr_range
+    pct_hrr = max(0.1, min(pct_hrr, 1.0))
+    pct_vo2max = min(1.0197 * pct_hrr + 0.01, 1.0)  # Swain (1994)
+
+    return vo2_at_pace / pct_vo2max
 
 
 def predict_race_time_s(vdot: float, target_distance_m: float) -> float:
