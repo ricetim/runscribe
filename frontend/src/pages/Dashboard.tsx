@@ -15,6 +15,8 @@ import {
 import { getStatsSummary, getTrainingLoad, getVdot, getActivities } from "../api/client";
 import type { Activity } from "../types";
 import { useUnits } from "../contexts/UnitsContext";
+import RouteThumbnail from "../components/RouteThumbnail";
+import RpeBadge from "../components/RpeBadge";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,26 +110,51 @@ function TrainingLoadChart({ days }: { days: number }) {
 
 // ── recent activity row ───────────────────────────────────────────────────────
 
+function formatWorkoutName(sportType: string, plannedWorkoutType?: string | null): string {
+  if (plannedWorkoutType) return plannedWorkoutType;
+  return sportType.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
 function ActivityRow({ act }: { act: Activity }) {
   const { fmtDist, fmtPace } = useUnits();
   return (
     <Link
       to={`/activities/${act.id}`}
-      className="flex items-center gap-4 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors"
+      className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all"
     >
+      <RouteThumbnail track={act.track} width={96} height={72} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-800 truncate">
-          {new Date(act.started_at).toLocaleDateString("en-GB", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          })}
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-xs text-gray-400">
+            {new Date(act.started_at).toLocaleDateString(undefined, {
+              weekday: "short", month: "short", day: "numeric",
+            })}
+          </span>
+          {act.rpe != null && act.rpe > 0 && <RpeBadge rpe={act.rpe} />}
         </div>
-        <div className="text-xs text-gray-400">{act.sport_type}</div>
+        <div className="text-sm font-semibold text-gray-900 mb-0.5">
+          {formatWorkoutName(act.sport_type, act.planned_workout_type)}
+        </div>
+        {act.notes && (
+          <p className="text-xs text-gray-400 truncate">
+            {act.notes.length > 80 ? act.notes.slice(0, 80) + "…" : act.notes}
+          </p>
+        )}
       </div>
-      <div className="text-right text-sm font-mono text-gray-700">{fmtDist(act.distance_m)}</div>
-      <div className="text-right text-sm font-mono text-gray-400">{fmtTime(act.duration_s)}</div>
-      <div className="text-right text-sm font-mono text-gray-500">{fmtPace(act.avg_pace_s_per_km)}</div>
+      <div className="flex gap-3 text-sm text-right flex-shrink-0">
+        <div>
+          <div className="font-semibold text-gray-900">{fmtDist(act.distance_m)}</div>
+          <div className="text-xs text-gray-400">dist</div>
+        </div>
+        <div>
+          <div className="font-semibold text-gray-900">{fmtTime(act.duration_s)}</div>
+          <div className="text-xs text-gray-400">time</div>
+        </div>
+        <div>
+          <div className="font-semibold text-gray-900">{fmtPace(act.avg_pace_s_per_km)}</div>
+          <div className="text-xs text-gray-400">pace</div>
+        </div>
+      </div>
     </Link>
   );
 }
@@ -275,7 +302,7 @@ export default function Dashboard() {
             </Link>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="space-y-2">
             {recentActs.map((act) => (
               <ActivityRow key={act.id} act={act} />
             ))}
