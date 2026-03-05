@@ -1,21 +1,100 @@
 import shutil
 import uuid
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.config import DATA_DIR
 from app.database import get_session
-from app.models import Activity, DataPoint, Photo
+from app.models import Activity, DataPoint, Photo, PlannedWorkout
 from app.services.fit_parser import parse_fit_file
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 
-@router.get("", response_model=list[Activity])
+class ActivitySummary(BaseModel):
+    id: int
+    source: str
+    external_id: Optional[str] = None
+    strava_id: Optional[str] = None
+    started_at: datetime
+    distance_m: float
+    duration_s: int
+    elevation_gain_m: float
+    avg_hr: Optional[int] = None
+    avg_pace_s_per_km: Optional[float] = None
+    sport_type: str
+    notes: Optional[str] = None
+    rpe: Optional[int] = None
+    track: list[list[float]] = []
+    planned_workout_type: Optional[str] = None
+
+
+def _downsample(points: list[list[float]], max_points: int = 150) -> list[list[float]]:
+    if len(points) <= max_points:
+        return points
+    step = len(points) / max_points
+    indices = {0, len(points) - 1}
+    indices.update(int(i * step) for i in range(1, max_points - 1))
+    return [points[i] for i in sorted(indices)]
+
+
+@router.get("", response_model=list[ActivitySummary])
 def list_activities(session: Session = Depends(get_session)):
-    return session.exec(select(Activity).order_by(Activity.started_at.desc())).all()
+    activities = session.exec(
+        select(Activity).order_by(Activity.started_at.desc())
+    ).all()
+
+    if not activities:
+        return []
+
+    activity_ids = [a.id for a in activities]
+
+    # Bulk fetch only lat/lon for all activities (avoids N+1)
+    gps_rows = session.exec(
+        select(DataPoint.activity_id, DataPoint.lat, DataPoint.lon)
+        .where(DataPoint.activity_id.in_(activity_ids))
+        .where(DataPoint.lat.is_not(None))
+        .where(DataPoint.lon.is_not(None))
+        .order_by(DataPoint.activity_id, DataPoint.timestamp)
+    ).all()
+
+    gps_by_activity: dict[int, list[list[float]]] = defaultdict(list)
+    for row in gps_rows:
+        gps_by_activity[row[0]].append([row[1], row[2]])
+
+    # Bulk fetch planned workout types linked to these activities
+    planned_rows = session.exec(
+        select(PlannedWorkout.completed_activity_id, PlannedWorkout.workout_type)
+        .where(PlannedWorkout.completed_activity_id.in_(activity_ids))
+    ).all()
+    planned_type_by_activity = {row[0]: row[1] for row in planned_rows}
+
+    return [
+        ActivitySummary(
+            id=a.id,
+            source=a.source,
+            external_id=a.external_id,
+            strava_id=a.strava_id,
+            started_at=a.started_at,
+            distance_m=a.distance_m,
+            duration_s=a.duration_s,
+            elevation_gain_m=a.elevation_gain_m,
+            avg_hr=a.avg_hr,
+            avg_pace_s_per_km=a.avg_pace_s_per_km,
+            sport_type=a.sport_type,
+            notes=a.notes,
+            rpe=a.rpe,
+            track=_downsample(gps_by_activity.get(a.id, [])),
+            planned_workout_type=planned_type_by_activity.get(a.id),
+        )
+        for a in activities
+    ]
 
 
 @router.get("/{activity_id}", response_model=Activity)
@@ -97,7 +176,7 @@ def update_activity(
     act = session.get(Activity, activity_id)
     if not act:
         raise HTTPException(status_code=404, detail="Activity not found")
-    for key in {"notes", "strava_id"}:
+    for key in {"notes", "strava_id", "rpe"}:
         if key in data:
             setattr(act, key, data[key])
     session.add(act)

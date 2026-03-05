@@ -11,6 +11,8 @@ export interface Activity {
   notes: string | null;
   rpe: number | null;
   strava_id: string | null;
+  track?: [number, number][];
+  planned_workout_type?: string | null;
 }
 
 export interface DataPoint {
