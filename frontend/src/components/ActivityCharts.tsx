@@ -7,7 +7,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Brush,
   CartesianGrid,
   Legend,
   ReferenceArea,
@@ -22,14 +21,21 @@ interface Props {
   onHoverIndex?: (idx: number | null) => void;
 }
 
-type Overlay = "pace" | "hr" | "elevation" | "cadence" | "power";
+type Overlay =
+  | "pace" | "hr" | "elevation" | "cadence" | "power"
+  | "vert_osc" | "stride_length" | "vert_ratio" | "gct" | "flight_time";
 
 const OVERLAYS: { key: Overlay; label: string; colour: string }[] = [
-  { key: "pace", label: "Pace", colour: "#3b82f6" },
-  { key: "hr", label: "Heart Rate", colour: "#ef4444" },
-  { key: "elevation", label: "Elevation", colour: "#10b981" },
-  { key: "cadence", label: "Cadence", colour: "#f59e0b" },
-  { key: "power", label: "Power", colour: "#8b5cf6" },
+  { key: "pace",          label: "Pace",          colour: "#3b82f6" },
+  { key: "hr",            label: "Heart Rate",    colour: "#ef4444" },
+  { key: "elevation",     label: "Elevation",     colour: "#94a3b8" },
+  { key: "cadence",       label: "Cadence",       colour: "#f59e0b" },
+  { key: "power",         label: "Power",         colour: "#8b5cf6" },
+  { key: "vert_osc",      label: "Vert. Osc.",    colour: "#06b6d4" },
+  { key: "stride_length", label: "Stride Length", colour: "#d946ef" },
+  { key: "vert_ratio",    label: "Vert. Ratio",   colour: "#ec4899" },
+  { key: "gct",           label: "Ground Contact",colour: "#f97316" },
+  { key: "flight_time",   label: "Flight Time",   colour: "#84cc16" },
 ];
 
 function formatElapsed(totalSeconds: number): string {
@@ -48,6 +54,11 @@ interface ChartRow {
   elevation: number | null;
   cadence: number | null;
   power: number | null;
+  vert_osc: number | null;
+  stride_length: number | null; // stored as cm for display
+  vert_ratio: number | null;
+  gct: number | null;
+  flight_time: number | null;
 }
 
 export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear, onHoverIndex }: Props) {
@@ -55,10 +66,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
   const [activeOverlays, setActiveOverlays] = useState<Set<Overlay>>(
     new Set(["pace", "hr", "elevation"])
   );
-  // Zoom state: indices into full `data`
   const [zoomedRange, setZoomedRange] = useState<[number, number] | null>(null);
-
-  // Drag-to-zoom state: elapsed_s values
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragEnd, setDragEnd] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -74,6 +82,11 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
         dp.speed_m_s && dp.speed_m_s > 0.5
           ? Math.round((1000 / dp.speed_m_s) * 10) / 10
           : null;
+      // Derive flight time: step_period - ground_contact_time
+      const flight_time =
+        dp.cadence && dp.cadence > 0 && dp.stance_time_ms != null
+          ? Math.max(0, Math.round(60000 / dp.cadence - dp.stance_time_ms))
+          : null;
       return {
         idx,
         elapsed_s,
@@ -82,6 +95,11 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
         elevation: dp.altitude_m ?? null,
         cadence: dp.cadence ?? null,
         power: dp.power_w ?? null,
+        vert_osc: dp.vertical_oscillation_mm ?? null,
+        stride_length: dp.stride_length_m != null ? Math.round(dp.stride_length_m * 100) : null,
+        vert_ratio: dp.vertical_ratio ?? null,
+        gct: dp.stance_time_ms ?? null,
+        flight_time,
       };
     });
   }, [datapoints]);
@@ -90,6 +108,9 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
   const displayData = zoomedRange ? data.slice(zoomedRange[0], zoomedRange[1] + 1) : data;
 
   const hasPower = datapoints.some((dp) => dp.power_w !== null);
+  const hasDynamics = datapoints.some(
+    (dp) => dp.vertical_oscillation_mm != null || dp.stance_time_ms != null
+  );
 
   function toggleOverlay(key: Overlay) {
     setActiveOverlays((prev) => {
@@ -105,14 +126,12 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
     onRangeClear?.();
   }
 
-  /** Commit the drag selection as a zoom */
   function commitZoom() {
     if (dragStart === null || dragEnd === null) return;
     const left = Math.min(dragStart, dragEnd);
     const right = Math.max(dragStart, dragEnd);
-    if (left === right) return; // plain click, no drag
+    if (left === right) return;
 
-    // Find indices in displayData by elapsed_s
     let startIdx = 0;
     let endIdx = displayData.length - 1;
     for (let i = 0; i < displayData.length; i++) {
@@ -131,44 +150,49 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
 
   if (!data.length) return null;
 
-  const visibleOverlays = OVERLAYS.filter(
-    (o) => activeOverlays.has(o.key) && (o.key !== "power" || hasPower)
-  );
+  const visibleOverlays = OVERLAYS.filter((o) => {
+    if (!activeOverlays.has(o.key)) return false;
+    if (o.key === "power" && !hasPower) return false;
+    if (["vert_osc", "stride_length", "vert_ratio", "gct", "flight_time"].includes(o.key) && !hasDynamics) return false;
+    return true;
+  });
   const paceActive = activeOverlays.has("pace");
 
-  const refLeft = dragStart !== null && dragEnd !== null ? Math.min(dragStart, dragEnd) : null;
+  const refLeft  = dragStart !== null && dragEnd !== null ? Math.min(dragStart, dragEnd) : null;
   const refRight = dragStart !== null && dragEnd !== null ? Math.max(dragStart, dragEnd) : null;
 
+  // Which overlays to show in the toggle bar (hide power/dynamics if no data)
+  const availableOverlays = OVERLAYS.filter((o) => {
+    if (o.key === "power" && !hasPower) return false;
+    if (["vert_osc", "stride_length", "vert_ratio", "gct", "flight_time"].includes(o.key) && !hasDynamics) return false;
+    return true;
+  });
+
+  const tooltipUnit: Record<string, (v: number) => string> = {
+    pace:          (v) => fmtPace(v),
+    elevation:     (v) => fmtElev(v),
+    hr:            (v) => `${v} bpm`,
+    cadence:       (v) => `${v} spm`,
+    power:         (v) => `${v} W`,
+    vert_osc:      (v) => `${v.toFixed(1)} mm`,
+    stride_length: (v) => `${v} cm`,
+    vert_ratio:    (v) => `${v.toFixed(1)} %`,
+    gct:           (v) => `${v.toFixed(0)} ms`,
+    flight_time:   (v) => `${v.toFixed(0)} ms`,
+  };
+
   const CustomTooltip = ({
-    active,
-    payload,
-    label,
-  }: {
-    active?: boolean;
-    payload?: any[];
-    label?: number;
-  }) => {
+    active, payload, label,
+  }: { active?: boolean; payload?: any[]; label?: number }) => {
     if (!active || !payload?.length || isDragging) return null;
     return (
       <div className="bg-white border border-gray-200 rounded shadow-lg p-3 text-sm">
-        <div className="font-medium text-gray-500 mb-1">
-          {formatElapsed(label ?? 0)}
-        </div>
+        <div className="font-medium text-gray-500 mb-1">{formatElapsed(label ?? 0)}</div>
         {payload.map((p: any) => (
           <div key={p.dataKey} style={{ color: p.color }}>
             {p.name}:{" "}
             <span className="font-semibold">
-              {p.dataKey === "pace"
-                ? fmtPace(p.value)
-                : p.dataKey === "elevation"
-                ? fmtElev(p.value)
-                : p.dataKey === "hr"
-                ? `${p.value} bpm`
-                : p.dataKey === "cadence"
-                ? `${p.value} spm`
-                : p.dataKey === "power"
-                ? `${p.value} W`
-                : p.value}
+              {tooltipUnit[p.dataKey]?.(p.value) ?? p.value}
             </span>
           </div>
         ))}
@@ -178,9 +202,9 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
 
   return (
     <div className="space-y-3">
-      {/* Toolbar: overlay toggles + zoom controls */}
+      {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
-        {OVERLAYS.filter((o) => o.key !== "power" || hasPower).map((o) => (
+        {availableOverlays.map((o) => (
           <button
             key={o.key}
             onClick={() => toggleOverlay(o.key)}
@@ -209,8 +233,8 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
         )}
       </div>
 
-      {/* Main chart — drag horizontally to zoom */}
-      <ResponsiveContainer width="100%" height={240}>
+      {/* Main chart — drag to zoom */}
+      <ResponsiveContainer width="100%" height={260}>
         <ComposedChart
           data={displayData}
           margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
@@ -224,7 +248,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
           }}
           onMouseMove={(e: any) => {
             const label = e?.activeLabel;
-            const idx = e?.activeTooltipIndex;
+            const idx   = e?.activeTooltipIndex;
             if (!isDragging) {
               onHoverIndex?.(idx != null ? offset + idx : null);
             } else if (label != null) {
@@ -250,8 +274,8 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
         >
           <defs>
             <linearGradient id="elevGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#10b981" stopOpacity={0.04} />
+              <stop offset="5%"  stopColor="#94a3b8" stopOpacity={0.5} />
+              <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.05} />
             </linearGradient>
           </defs>
 
@@ -263,7 +287,6 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
             tick={{ fontSize: 11 }}
             allowDataOverflow
           />
-          {/* Pace axis — reversed so faster pace (lower s/km) is higher */}
           {paceActive && (
             <YAxis
               yAxisId="pace"
@@ -275,7 +298,6 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
               width={52}
             />
           )}
-          {/* Secondary axis for HR, elevation, cadence, power */}
           <YAxis
             yAxisId="right"
             orientation="right"
@@ -293,7 +315,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
                 yAxisId="right"
                 type="monotone"
                 dataKey="elevation"
-                stroke="#10b981"
+                stroke="#94a3b8"
                 fill="url(#elevGradient)"
                 strokeWidth={1.5}
                 name="Elevation"
@@ -317,7 +339,6 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
             )
           )}
 
-          {/* Drag-to-zoom selection box */}
           {isDragging && refLeft !== null && refRight !== null && refLeft !== refRight && (
             <ReferenceArea
               yAxisId="right"
@@ -329,18 +350,6 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
               strokeOpacity={0.4}
             />
           )}
-
-          <Brush
-            dataKey="elapsed_s"
-            height={22}
-            stroke="#94a3b8"
-            tickFormatter={formatElapsed}
-            onChange={(e: any) => {
-              const { startIndex: s, endIndex: en } = e ?? {};
-              if (s === undefined || en === undefined) return;
-              onRangeChange?.(offset + s, offset + en);
-            }}
-          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

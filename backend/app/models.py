@@ -35,6 +35,11 @@ class DataPoint(SQLModel, table=True):
     cadence: Optional[int] = None
     altitude_m: Optional[float] = None
     power_w: Optional[int] = None
+    # Running dynamics
+    vertical_oscillation_mm: Optional[float] = None   # mm
+    stride_length_m: Optional[float] = None           # metres
+    vertical_ratio: Optional[float] = None            # %
+    stance_time_ms: Optional[float] = None            # ms (ground contact time)
 
     activity: Optional[Activity] = Relationship(back_populates="datapoints")
 

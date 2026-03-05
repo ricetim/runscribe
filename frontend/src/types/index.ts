@@ -24,6 +24,10 @@ export interface DataPoint {
   cadence: number | null;
   altitude_m: number | null;
   power_w: number | null;
+  vertical_oscillation_mm: number | null;
+  stride_length_m: number | null;
+  vertical_ratio: number | null;
+  stance_time_ms: number | null;
 }
 
 export interface Photo {

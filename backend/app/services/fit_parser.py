@@ -80,6 +80,11 @@ def parse_fit_file(path: Path) -> FitParseResult:
             "cadence": cadence,
             "altitude_m": r.get("altitude"),
             "power_w": r.get("power"),
+            # Running dynamics (available on Garmin/Coros devices with HRM or pod)
+            "vertical_oscillation_mm": r.get("vertical_oscillation"),
+            "stride_length_m": r.get("stride_length"),
+            "vertical_ratio": r.get("vertical_ratio"),
+            "stance_time_ms": r.get("stance_time"),
         })
 
     return FitParseResult(
