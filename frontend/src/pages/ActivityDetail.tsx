@@ -150,6 +150,13 @@ export default function ActivityDetail() {
         {act.avg_hr && (
           <StatCard label="Avg HR" value={`${act.avg_hr}`} sub="bpm" />
         )}
+        {act.rpe && (
+          <StatCard
+            label="Effort"
+            value={["", "Very Easy", "Easy", "Moderate", "Hard", "Maximum"][act.rpe]}
+            sub={`RPE ${act.rpe}/5`}
+          />
+        )}
       </div>
 
       {/* Map */}

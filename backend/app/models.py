@@ -17,6 +17,7 @@ class Activity(SQLModel, table=True):
     sport_type: str = "run"
     fit_file_path: Optional[str] = None
     notes: Optional[str] = None
+    rpe: Optional[int] = None                # 1-5 from Coros feelType
 
     datapoints: List["DataPoint"] = Relationship(back_populates="activity")
     photos: List["Photo"] = Relationship(back_populates="activity")

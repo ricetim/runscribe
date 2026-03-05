@@ -20,6 +20,7 @@ def create_db_and_tables():
         _add_column(conn, "datapoint", "stride_length_m", "REAL")
         _add_column(conn, "datapoint", "vertical_ratio", "REAL")
         _add_column(conn, "datapoint", "stance_time_ms", "REAL")
+        _add_column(conn, "activity", "rpe", "INTEGER")
         conn.commit()
 
 

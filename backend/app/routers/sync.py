@@ -4,7 +4,7 @@ from app.database import get_session
 from app.models import Activity, DataPoint
 from app.services.strava import sync_photos_for_activity
 from app.services.coros import login as coros_login, list_activities as coros_list
-from app.services.coros import download_fit, get_training_notes
+from app.services.coros import download_fit, get_activity_detail
 from app.services.fit_parser import parse_fit_file
 from app.config import COROS_EMAIL, COROS_PASSWORD, DATA_DIR
 from datetime import datetime, timezone
@@ -43,19 +43,20 @@ def _sync_coros(session: Session):
     if not COROS_EMAIL:
         return
     try:
-        token = coros_login(COROS_EMAIL, COROS_PASSWORD)
-        remote = coros_list(token)
+        token, user_id = coros_login(COROS_EMAIL, COROS_PASSWORD)
+        remote = coros_list(token, user_id)
         existing = {a.external_id for a in session.exec(select(Activity)).all()}
         new_count = 0
         for meta in remote:
             ext_id = str(meta.get("labelId", ""))
+            sport_type_str = str(meta.get("sportType", "100"))
             if ext_id in existing:
                 continue
-            fit_bytes = download_fit(token, str(meta.get("sportType", "100")), ext_id)
+            fit_bytes = download_fit(token, user_id, ext_id, sport_type_str)
             dest = DATA_DIR / f"{uuid.uuid4()}.fit"
             dest.write_bytes(fit_bytes)
             result = parse_fit_file(dest)
-            notes = get_training_notes(token, ext_id)
+            detail = get_activity_detail(token, user_id, ext_id, sport_type_str)
             paces = [1000 / dp["speed_m_s"] for dp in result.datapoints
                      if dp.get("speed_m_s") and dp["speed_m_s"] > 0]
             act = Activity(
@@ -63,7 +64,7 @@ def _sync_coros(session: Session):
                 started_at=result.started_at, distance_m=result.distance_m,
                 duration_s=result.duration_s, elevation_gain_m=result.elevation_gain_m,
                 avg_hr=result.avg_hr, sport_type=result.sport_type,
-                fit_file_path=str(dest), notes=notes,
+                fit_file_path=str(dest), notes=detail["notes"], rpe=detail["rpe"],
                 avg_pace_s_per_km=sum(paces) / len(paces) if paces else None,
             )
             session.add(act)

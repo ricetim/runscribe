@@ -9,6 +9,7 @@ export interface Activity {
   avg_pace_s_per_km: number | null;
   sport_type: string;
   notes: string | null;
+  rpe: number | null;
   strava_id: string | null;
 }
 
