@@ -10,6 +10,7 @@ import {
   Brush,
   CartesianGrid,
   Legend,
+  ReferenceArea,
 } from "recharts";
 import { DataPoint } from "../types";
 import { useUnits } from "../contexts/UnitsContext";
@@ -54,8 +55,13 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
   const [activeOverlays, setActiveOverlays] = useState<Set<Overlay>>(
     new Set(["pace", "hr", "elevation"])
   );
-  // zoomedRange is [startIdx, endIdx] into the full `data` array
+  // Zoom state: indices into full `data`
   const [zoomedRange, setZoomedRange] = useState<[number, number] | null>(null);
+
+  // Drag-to-zoom state: elapsed_s values
+  const [dragStart, setDragStart] = useState<number | null>(null);
+  const [dragEnd, setDragEnd] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const data: ChartRow[] = useMemo(() => {
     if (!datapoints.length) return [];
@@ -99,6 +105,30 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
     onRangeClear?.();
   }
 
+  /** Commit the drag selection as a zoom */
+  function commitZoom() {
+    if (dragStart === null || dragEnd === null) return;
+    const left = Math.min(dragStart, dragEnd);
+    const right = Math.max(dragStart, dragEnd);
+    if (left === right) return; // plain click, no drag
+
+    // Find indices in displayData by elapsed_s
+    let startIdx = 0;
+    let endIdx = displayData.length - 1;
+    for (let i = 0; i < displayData.length; i++) {
+      if (displayData[i].elapsed_s >= left) { startIdx = i; break; }
+    }
+    for (let i = displayData.length - 1; i >= 0; i--) {
+      if (displayData[i].elapsed_s <= right) { endIdx = i; break; }
+    }
+    if (endIdx <= startIdx) return;
+
+    const absStart = offset + startIdx;
+    const absEnd = offset + endIdx;
+    setZoomedRange([absStart, absEnd]);
+    onRangeChange?.(absStart, absEnd);
+  }
+
   if (!data.length) return null;
 
   const visibleOverlays = OVERLAYS.filter(
@@ -106,6 +136,8 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
   );
   const paceActive = activeOverlays.has("pace");
 
+  const refLeft = dragStart !== null && dragEnd !== null ? Math.min(dragStart, dragEnd) : null;
+  const refRight = dragStart !== null && dragEnd !== null ? Math.max(dragStart, dragEnd) : null;
 
   const CustomTooltip = ({
     active,
@@ -116,7 +148,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
     payload?: any[];
     label?: number;
   }) => {
-    if (!active || !payload?.length) return null;
+    if (!active || !payload?.length || isDragging) return null;
     return (
       <div className="bg-white border border-gray-200 rounded shadow-lg p-3 text-sm">
         <div className="font-medium text-gray-500 mb-1">
@@ -177,16 +209,44 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
         )}
       </div>
 
-      {/* Main chart */}
+      {/* Main chart — drag horizontally to zoom */}
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart
           data={displayData}
           margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
-          onMouseMove={(e: any) => {
-            const idx = e?.activeTooltipIndex;
-            onHoverIndex?.(idx != null ? offset + idx : null);
+          style={{ cursor: isDragging ? "col-resize" : "crosshair" }}
+          onMouseDown={(e: any) => {
+            const label = e?.activeLabel;
+            if (label == null) return;
+            setDragStart(label);
+            setDragEnd(label);
+            setIsDragging(true);
           }}
-          onMouseLeave={() => onHoverIndex?.(null)}
+          onMouseMove={(e: any) => {
+            const label = e?.activeLabel;
+            const idx = e?.activeTooltipIndex;
+            if (!isDragging) {
+              onHoverIndex?.(idx != null ? offset + idx : null);
+            } else if (label != null) {
+              setDragEnd(label);
+            }
+          }}
+          onMouseUp={() => {
+            if (isDragging) {
+              commitZoom();
+              setDragStart(null);
+              setDragEnd(null);
+              setIsDragging(false);
+            }
+          }}
+          onMouseLeave={() => {
+            onHoverIndex?.(null);
+            if (isDragging) {
+              setDragStart(null);
+              setDragEnd(null);
+              setIsDragging(false);
+            }
+          }}
         >
           <defs>
             <linearGradient id="elevGradient" x1="0" y1="0" x2="0" y2="1">
@@ -201,6 +261,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
             tickFormatter={formatElapsed}
             minTickGap={60}
             tick={{ fontSize: 11 }}
+            allowDataOverflow
           />
           {/* Pace axis — reversed so faster pace (lower s/km) is higher */}
           {paceActive && (
@@ -256,6 +317,19 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
             )
           )}
 
+          {/* Drag-to-zoom selection box */}
+          {isDragging && refLeft !== null && refRight !== null && refLeft !== refRight && (
+            <ReferenceArea
+              yAxisId="right"
+              x1={refLeft}
+              x2={refRight}
+              fill="#3b82f6"
+              fillOpacity={0.15}
+              stroke="#3b82f6"
+              strokeOpacity={0.4}
+            />
+          )}
+
           <Brush
             dataKey="elapsed_s"
             height={22}
@@ -264,13 +338,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
             onChange={(e: any) => {
               const { startIndex: s, endIndex: en } = e ?? {};
               if (s === undefined || en === undefined) return;
-              const absStart = offset + s;
-              const absEnd = offset + en;
-              onRangeChange?.(absStart, absEnd);
-              // Auto-zoom: if user selected a strict sub-range, zoom in
-              if (s > 0 || en < displayData.length - 1) {
-                setZoomedRange([absStart, absEnd]);
-              }
+              onRangeChange?.(offset + s, offset + en);
             }}
           />
         </ComposedChart>
