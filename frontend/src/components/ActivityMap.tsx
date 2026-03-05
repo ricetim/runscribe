@@ -28,14 +28,34 @@ interface Props {
   hoverIndex?: number | null;
 }
 
-/** Fits the map to the track bounds whenever coords change. */
-function FitBounds({ coords }: { coords: [number, number][] }) {
+/** Fits the map to the highlighted segment when set, else the full track. */
+function FitBounds({
+  coords,
+  highlightedCoords,
+}: {
+  coords: [number, number][];
+  highlightedCoords?: [number, number][];
+}) {
   const map = useMap();
+
+  // Fit to full route on initial mount only
   useEffect(() => {
     if (coords.length >= 2) {
-      map.fitBounds(coords as [number, number][], { padding: [32, 32] });
+      map.fitBounds(coords, { padding: [24, 24] });
     }
-  }, [coords, map]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords]);
+
+  // Fit to highlighted segment whenever it changes
+  useEffect(() => {
+    if (highlightedCoords && highlightedCoords.length >= 2) {
+      map.fitBounds(highlightedCoords, { padding: [40, 40] });
+    } else if (highlightedCoords === undefined && coords.length >= 2) {
+      // Cleared — zoom back to full route
+      map.fitBounds(coords, { padding: [24, 24] });
+    }
+  }, [highlightedCoords, coords, map]);
+
   return null;
 }
 
@@ -131,7 +151,10 @@ export default function ActivityMap({ datapoints, photos = [], highlightRange, h
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
       />
-      <FitBounds coords={coords} />
+      <FitBounds
+        coords={coords}
+        highlightedCoords={highlighted.length >= 2 ? highlighted : undefined}
+      />
 
       {/* Pace-coloured track */}
       {paceSegments.length > 0 ? (

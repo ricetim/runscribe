@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  LineChart,
+  ComposedChart,
+  Area,
   Line,
   XAxis,
   YAxis,
@@ -16,6 +17,7 @@ import { useUnits } from "../contexts/UnitsContext";
 interface Props {
   datapoints: DataPoint[];
   onRangeChange?: (startIdx: number, endIdx: number) => void;
+  onRangeClear?: () => void;
   onHoverIndex?: (idx: number | null) => void;
 }
 
@@ -37,7 +39,6 @@ function formatElapsed(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-
 interface ChartRow {
   idx: number;
   elapsed_s: number;
@@ -48,11 +49,15 @@ interface ChartRow {
   power: number | null;
 }
 
-export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex }: Props) {
+export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear, onHoverIndex }: Props) {
   const { fmtPace, fmtElev } = useUnits();
   const [activeOverlays, setActiveOverlays] = useState<Set<Overlay>>(
     new Set(["pace", "hr", "elevation"])
   );
+  // zoomedRange is [startIdx, endIdx] into the full `data` array
+  const [zoomedRange, setZoomedRange] = useState<[number, number] | null>(null);
+  // Last brush selection relative to displayData (used for zoom-in button)
+  const [brushIndices, setBrushIndices] = useState<[number, number] | null>(null);
 
   const data: ChartRow[] = useMemo(() => {
     if (!datapoints.length) return [];
@@ -77,6 +82,9 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
     });
   }, [datapoints]);
 
+  const offset = zoomedRange?.[0] ?? 0;
+  const displayData = zoomedRange ? data.slice(zoomedRange[0], zoomedRange[1] + 1) : data;
+
   const hasPower = datapoints.some((dp) => dp.power_w !== null);
 
   function toggleOverlay(key: Overlay) {
@@ -88,14 +96,33 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
     });
   }
 
+  function zoomIn() {
+    if (!brushIndices) return;
+    const absStart = offset + brushIndices[0];
+    const absEnd = offset + brushIndices[1];
+    if (absEnd - absStart < 2) return;
+    setZoomedRange([absStart, absEnd]);
+    setBrushIndices(null);
+    onRangeChange?.(absStart, absEnd);
+  }
+
+  function zoomOut() {
+    setZoomedRange(null);
+    setBrushIndices(null);
+    onRangeClear?.();
+  }
+
   if (!data.length) return null;
 
   const visibleOverlays = OVERLAYS.filter(
     (o) => activeOverlays.has(o.key) && (o.key !== "power" || hasPower)
   );
-
-  // Build Y-axis assignments — pace gets its own left axis (reversed), rest share right
   const paceActive = activeOverlays.has("pace");
+
+  // Is the current brush selection a proper sub-range (not the full display)?
+  const canZoomIn =
+    brushIndices != null &&
+    (brushIndices[0] > 0 || brushIndices[1] < displayData.length - 1);
 
   const CustomTooltip = ({
     active,
@@ -136,8 +163,8 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
 
   return (
     <div className="space-y-3">
-      {/* Overlay toggles */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Toolbar: overlay toggles + zoom controls */}
+      <div className="flex items-center gap-2 flex-wrap">
         {OVERLAYS.filter((o) => o.key !== "power" || hasPower).map((o) => (
           <button
             key={o.key}
@@ -156,16 +183,45 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
             {o.label}
           </button>
         ))}
+
+        <div className="ml-auto flex gap-1">
+          {canZoomIn && (
+            <button
+              onClick={zoomIn}
+              className="px-2.5 py-1 text-xs rounded border bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+            >
+              Zoom in
+            </button>
+          )}
+          {zoomedRange && (
+            <button
+              onClick={zoomOut}
+              className="px-2.5 py-1 text-xs rounded border bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100"
+            >
+              Zoom out
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main chart */}
       <ResponsiveContainer width="100%" height={240}>
-        <LineChart
-          data={data}
+        <ComposedChart
+          data={displayData}
           margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
-          onMouseMove={(e: any) => onHoverIndex?.(e?.activeTooltipIndex ?? null)}
+          onMouseMove={(e: any) => {
+            const idx = e?.activeTooltipIndex;
+            onHoverIndex?.(idx != null ? offset + idx : null);
+          }}
           onMouseLeave={() => onHoverIndex?.(null)}
         >
+          <defs>
+            <linearGradient id="elevGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+              <stop offset="95%" stopColor="#10b981" stopOpacity={0.04} />
+            </linearGradient>
+          </defs>
+
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis
             dataKey="elapsed_s"
@@ -196,20 +252,36 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
 
-          {visibleOverlays.map((o) => (
-            <Line
-              key={o.key}
-              yAxisId={o.key === "pace" ? "pace" : "right"}
-              type="monotone"
-              dataKey={o.key}
-              dot={false}
-              stroke={o.colour}
-              strokeWidth={1.5}
-              name={o.label}
-              connectNulls={false}
-              isAnimationActive={false}
-            />
-          ))}
+          {visibleOverlays.map((o) =>
+            o.key === "elevation" ? (
+              <Area
+                key={o.key}
+                yAxisId="right"
+                type="monotone"
+                dataKey="elevation"
+                stroke="#10b981"
+                fill="url(#elevGradient)"
+                strokeWidth={1.5}
+                name="Elevation"
+                dot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            ) : (
+              <Line
+                key={o.key}
+                yAxisId={o.key === "pace" ? "pace" : "right"}
+                type="monotone"
+                dataKey={o.key}
+                dot={false}
+                stroke={o.colour}
+                strokeWidth={1.5}
+                name={o.label}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            )
+          )}
 
           <Brush
             dataKey="elapsed_s"
@@ -217,15 +289,15 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
             stroke="#94a3b8"
             tickFormatter={formatElapsed}
             onChange={(e: any) => {
-              if (
-                e.startIndex !== undefined &&
-                e.endIndex !== undefined
-              ) {
-                onRangeChange?.(e.startIndex, e.endIndex);
+              if (e.startIndex !== undefined && e.endIndex !== undefined) {
+                setBrushIndices([e.startIndex, e.endIndex]);
+                const absStart = offset + e.startIndex;
+                const absEnd = offset + e.endIndex;
+                onRangeChange?.(absStart, absEnd);
               }
             }}
           />
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

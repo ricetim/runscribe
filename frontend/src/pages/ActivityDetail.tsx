@@ -183,6 +183,7 @@ export default function ActivityDetail() {
           <ActivityCharts
             datapoints={datapoints}
             onRangeChange={(start, end) => setBrushRange([start, end])}
+            onRangeClear={() => setBrushRange(null)}
             onHoverIndex={setHoverIndex}
           />
         </div>
