@@ -24,6 +24,8 @@ export const getStatsSummary = (period = "week") =>
 export const getTrainingLoad = (days = 90) =>
   api.get(`/stats/training-load?days=${days}`).then((r) => r.data);
 export const getVdot = () => api.get("/stats/vdot").then((r) => r.data);
+export const getPersonalBests = () => api.get("/stats/personal-bests").then((r) => r.data);
+export const deleteActivity = (id: number) => api.delete(`/activities/${id}`);
 export const getActivityAnalytics = (id: number) =>
   api.get(`/stats/activities/${id}/analytics`).then((r) => r.data);
 

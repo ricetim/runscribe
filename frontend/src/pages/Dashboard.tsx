@@ -12,7 +12,7 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from "recharts";
-import { getStatsSummary, getTrainingLoad, getVdot, getActivities } from "../api/client";
+import { getStatsSummary, getTrainingLoad, getVdot, getActivities, getPersonalBests } from "../api/client";
 import type { Activity } from "../types";
 import { useUnits } from "../contexts/UnitsContext";
 import RouteThumbnail from "../components/RouteThumbnail";
@@ -65,6 +65,44 @@ function ZoneRow({
       <span className={`w-2 h-2 rounded-full ${color}`} />
       <span className="w-20 text-sm font-medium text-gray-700">{label}</span>
       <span className="text-sm text-gray-500 font-mono">{pace}</span>
+    </div>
+  );
+}
+
+// ── personal bests ────────────────────────────────────────────────────────────
+
+const PB_DISTANCES = ["400m", "800m", "1 mile", "5k", "10k", "half", "marathon"] as const;
+
+function PersonalBests() {
+  const { data, isLoading } = useQuery<Record<string, number | null>>({
+    queryKey: ["personal-bests"],
+    queryFn: getPersonalBests,
+  });
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+      <h2 className="text-sm font-semibold text-gray-700 mb-3">Personal Bests</h2>
+      {isLoading ? (
+        <div className="text-sm text-gray-400">Loading…</div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {PB_DISTANCES.map((label) => {
+            const secs = data?.[label] ?? null;
+            return (
+              <div key={label} className="flex items-center justify-between py-1.5">
+                <span className="text-sm text-gray-600 w-20">{label}</span>
+                {secs != null ? (
+                  <span className="text-sm font-semibold text-gray-900 font-mono">
+                    {fmtTime(secs)}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-300">—</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -255,7 +293,9 @@ export default function Dashboard() {
           <TrainingLoadChart days={loadDays} />
         </div>
 
-        {/* VDOT + pace zones */}
+        {/* VDOT + pace zones + personal bests */}
+        <div className="flex flex-col gap-4">
+
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
           <div>
             <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Current VDOT</div>
@@ -284,6 +324,10 @@ export default function Dashboard() {
               <ZoneRow label="Reps" pace={fmtPace(zones.repetition)} color="bg-red-500" />
             </div>
           )}
+        </div>
+
+        <PersonalBests />
+
         </div>
       </div>
 

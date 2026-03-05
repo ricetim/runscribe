@@ -212,6 +212,44 @@ def get_vdot(session: Session = Depends(get_session)):
     }
 
 
+@router.get("/personal-bests")
+def get_personal_bests(session: Session = Depends(get_session)):
+    """
+    Best estimated time for common race distances (400 m → marathon).
+
+    For each target distance, finds the minimum (avg_pace × target_dist)
+    across all activities whose total distance meets or exceeds the target.
+    Returns null for distances the athlete has never covered.
+    """
+    DISTANCES = [
+        ("400m",     400),
+        ("800m",     800),
+        ("1 mile",   1609),
+        ("5k",       5000),
+        ("10k",      10000),
+        ("half",     21097),
+        ("marathon", 42195),
+    ]
+
+    acts = session.exec(
+        select(Activity)
+        .where(Activity.avg_pace_s_per_km.is_not(None))
+        .where(Activity.distance_m > 0)
+    ).all()
+
+    results: dict[str, int | None] = {}
+    for label, dist_m in DISTANCES:
+        best: float | None = None
+        for act in acts:
+            if act.distance_m >= dist_m * 0.95 and act.avg_pace_s_per_km:
+                estimated = act.avg_pace_s_per_km * (dist_m / 1000)
+                if best is None or estimated < best:
+                    best = estimated
+        results[label] = round(best) if best is not None else None
+
+    return results
+
+
 @router.get("/activities/{activity_id}/analytics")
 def get_activity_analytics(
     activity_id: int,

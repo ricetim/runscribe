@@ -169,6 +169,18 @@ def upload_fit(
     return act
 
 
+@router.delete("/{activity_id}", status_code=204)
+def delete_activity(activity_id: int, session: Session = Depends(get_session)):
+    act = session.get(Activity, activity_id)
+    if not act:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    session.exec(select(DataPoint).where(DataPoint.activity_id == activity_id))
+    for dp in session.exec(select(DataPoint).where(DataPoint.activity_id == activity_id)).all():
+        session.delete(dp)
+    session.delete(act)
+    session.commit()
+
+
 @router.patch("/{activity_id}")
 def update_activity(
     activity_id: int,
