@@ -18,6 +18,7 @@ class Activity(SQLModel, table=True):
     fit_file_path: Optional[str] = None
     notes: Optional[str] = None
     rpe: Optional[int] = None                # 1-5 from Coros feelType
+    name: Optional[str] = None             # activity name from Coros
 
     datapoints: List["DataPoint"] = Relationship(back_populates="activity")
     photos: List["Photo"] = Relationship(back_populates="activity")

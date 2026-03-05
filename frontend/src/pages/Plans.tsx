@@ -16,8 +16,12 @@ interface Plan {
 }
 
 const SOURCES = [
-  { value: "daniels", label: "Daniels' Running Formula" },
-  { value: "pfitzinger", label: "Pfitzinger 18/55" },
+  { value: "daniels",       label: "Daniels — Full Marathon Plan" },
+  { value: "daniels_white", label: "Daniels — White (Foundation, 6 wks)" },
+  { value: "daniels_red",   label: "Daniels — Red (Early Quality, 6 wks)" },
+  { value: "daniels_blue",  label: "Daniels — Blue (Intervals, 6 wks)" },
+  { value: "daniels_gold",  label: "Daniels — Gold (Peak Quality, 6 wks)" },
+  { value: "pfitzinger",    label: "Pfitzinger 18/55" },
 ];
 
 const DISTANCES = ["5k", "10k", "half", "marathon"];
@@ -54,7 +58,7 @@ export default function Plans() {
         name: form.name || undefined,
         notes: form.notes || undefined,
       };
-      if (form.source === "daniels") {
+      if (form.source.startsWith("daniels")) {
         payload.target_vdot = parseFloat(form.target_vdot);
       } else {
         payload.peak_weekly_km = parseFloat(form.peak_weekly_km);
@@ -123,7 +127,7 @@ export default function Plans() {
                 onChange={(e) => setForm((f) => ({ ...f, goal_race_date: e.target.value }))}
               />
             </div>
-            {form.source === "daniels" ? (
+            {form.source.startsWith("daniels") ? (
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
                   Target VDOT{suggestedVdot && ` (current: ${suggestedVdot})`}

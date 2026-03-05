@@ -31,6 +31,7 @@ class ActivitySummary(BaseModel):
     sport_type: str
     notes: Optional[str] = None
     rpe: Optional[int] = None
+    name: Optional[str] = None
     track: list[list[float]] = []
     planned_workout_type: Optional[str] = None
 
@@ -90,6 +91,7 @@ def list_activities(session: Session = Depends(get_session)):
             sport_type=a.sport_type,
             notes=a.notes,
             rpe=a.rpe,
+            name=a.name,
             track=_downsample(gps_by_activity.get(a.id, [])),
             planned_workout_type=planned_type_by_activity.get(a.id),
         )

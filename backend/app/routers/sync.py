@@ -45,12 +45,18 @@ def _sync_coros(session: Session):
     try:
         token, user_id = coros_login(COROS_EMAIL, COROS_PASSWORD)
         remote = coros_list(token, user_id)
-        existing = {a.external_id for a in session.exec(select(Activity)).all()}
+        existing_acts = {a.external_id: a for a in session.exec(select(Activity)).all()}
         new_count = 0
         for meta in remote:
             ext_id = str(meta.get("labelId", ""))
             sport_type_str = str(meta.get("sportType", "100"))
-            if ext_id in existing:
+            activity_name = meta.get("name") or None
+            if ext_id in existing_acts:
+                # Backfill name if missing
+                act = existing_acts[ext_id]
+                if act.name is None and activity_name:
+                    act.name = activity_name
+                    session.add(act)
                 continue
             fit_bytes = download_fit(token, user_id, ext_id, sport_type_str)
             dest = DATA_DIR / f"{uuid.uuid4()}.fit"
@@ -65,6 +71,7 @@ def _sync_coros(session: Session):
                 duration_s=result.duration_s, elevation_gain_m=result.elevation_gain_m,
                 avg_hr=result.avg_hr, sport_type=result.sport_type,
                 fit_file_path=str(dest), notes=detail["notes"], rpe=detail["rpe"],
+                name=activity_name,
                 avg_pace_s_per_km=sum(paces) / len(paces) if paces else None,
             )
             session.add(act)

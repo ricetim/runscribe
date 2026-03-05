@@ -159,9 +159,10 @@ def get_vdot(session: Session = Depends(get_session)):
 
     method = "hr_adjusted"
     if vdot_estimates:
-        # Use median to reduce noise from unusually easy/hard days
+        # Use 75th percentile to reduce noise from unusually easy/hard days
         vdot_estimates.sort(key=lambda x: x[0])
-        mid = len(vdot_estimates) // 2
+        mid = int(len(vdot_estimates) * 0.75)
+        mid = min(mid, len(vdot_estimates) - 1)
         best_vdot, best_act_id = vdot_estimates[mid]
     else:
         # Fallback: raw Daniels (accurate only for races/time-trials)

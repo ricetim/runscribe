@@ -80,20 +80,52 @@ function GoalCard({ item, onDelete }: { item: GoalWithProgress; onDelete: () => 
   );
 }
 
+function getDefaultDates(type: string): { period_start: string; period_end: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-based
+  if (type === "annual_distance") {
+    return {
+      period_start: `${y}-01-01`,
+      period_end:   `${y}-12-31`,
+    };
+  }
+  if (type === "monthly_distance") {
+    const firstOfMonth = new Date(y, m, 1);
+    const lastOfMonth  = new Date(y, m + 1, 0); // day 0 of next month = last day of this month
+    return {
+      period_start: firstOfMonth.toISOString().slice(0, 10),
+      period_end:   lastOfMonth.toISOString().slice(0, 10),
+    };
+  }
+  // weekly
+  const day = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((day + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {
+    period_start: monday.toISOString().slice(0, 10),
+    period_end:   sunday.toISOString().slice(0, 10),
+  };
+}
+
 export default function Goals() {
   const qc = useQueryClient();
   const { system } = useUnits();
   const [showForm, setShowForm] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
-  const yearEnd = `${new Date().getFullYear()}-12-31`;
 
   const defaultTarget = system === "imperial" ? "62" : "100"; // ~100 km in miles
-  const [form, setForm] = useState({
-    type: "monthly_distance",
-    target_value: defaultTarget,
-    period_start: today,
-    period_end: yearEnd,
-    notes: "",
+  const [form, setForm] = useState(() => {
+    const defaultType = "monthly_distance";
+    const { period_start, period_end } = getDefaultDates(defaultType);
+    return {
+      type: defaultType,
+      target_value: defaultTarget,
+      period_start,
+      period_end,
+      notes: "",
+    };
   });
 
   const { data: goals = [] } = useQuery<GoalWithProgress[]>({
@@ -146,7 +178,10 @@ export default function Goals() {
               <select
                 className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                 value={form.type}
-                onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+                onChange={(e) => {
+                  const newType = e.target.value;
+                  setForm((f) => ({ ...f, type: newType, ...getDefaultDates(newType) }));
+                }}
               >
                 {GOAL_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>

@@ -21,6 +21,7 @@ def create_db_and_tables():
         _add_column(conn, "datapoint", "vertical_ratio", "REAL")
         _add_column(conn, "datapoint", "stance_time_ms", "REAL")
         _add_column(conn, "activity", "rpe", "INTEGER")
+        _add_column(conn, "activity", "name", "TEXT")
         conn.commit()
     # Seed singleton UserProfile if not present
     from app.models import UserProfile

@@ -18,7 +18,8 @@ function formatDate(iso: string): string {
   });
 }
 
-function formatWorkoutName(sportType: string, plannedWorkoutType?: string | null): string {
+function formatWorkoutName(sportType: string, plannedWorkoutType?: string | null, name?: string | null): string {
+  if (name) return name;
   if (plannedWorkoutType) return plannedWorkoutType;
   return sportType
     .split("_")
@@ -90,7 +91,7 @@ export default function ActivityList() {
                   {a.rpe != null && a.rpe > 0 && <RpeBadge rpe={a.rpe} />}
                 </div>
                 <div className="text-base font-semibold text-gray-900 mb-0.5">
-                  {formatWorkoutName(a.sport_type, a.planned_workout_type)}
+                  {formatWorkoutName(a.sport_type, a.planned_workout_type, a.name)}
                 </div>
                 {a.notes && (
                   <p className="text-xs text-gray-400 truncate leading-relaxed">

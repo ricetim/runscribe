@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from app.database import get_session
 from app.models import TrainingPlan, PlannedWorkout
-from app.services.training_plans.daniels import generate_daniels_plan
+from app.services.training_plans.daniels import generate_daniels_plan, generate_daniels_phase_plan
 from app.services.training_plans.pfitzinger import generate_pfitzinger_plan
 from datetime import date
 
@@ -26,6 +26,14 @@ def create_plan(data: dict, session: Session = Depends(get_session)):
             target_vdot=float(data["target_vdot"]),
         )
         start = workouts_data[0]["scheduled_date"]
+    elif source in ("daniels_white", "daniels_red", "daniels_blue", "daniels_gold"):
+        phase = source.split("_", 1)[1]  # "white", "red", etc.
+        workouts_data = generate_daniels_phase_plan(
+            phase=phase,
+            goal_race_date=goal_race_date,
+            target_vdot=float(data["target_vdot"]),
+        )
+        start = workouts_data[0]["scheduled_date"]
     elif source == "pfitzinger":
         workouts_data = generate_pfitzinger_plan(
             goal_race_date=goal_race_date,
@@ -33,7 +41,7 @@ def create_plan(data: dict, session: Session = Depends(get_session)):
         )
         start = workouts_data[0]["scheduled_date"]
     else:
-        raise HTTPException(status_code=422, detail="source must be 'daniels' or 'pfitzinger'")
+        raise HTTPException(status_code=422, detail="source must be 'daniels', 'daniels_white', 'daniels_red', 'daniels_blue', 'daniels_gold', or 'pfitzinger'")
 
     plan = TrainingPlan(
         name=data.get("name", f"{source.title()} {data.get('goal_distance', 'marathon')} plan"),
