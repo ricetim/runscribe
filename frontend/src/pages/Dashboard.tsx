@@ -14,15 +14,9 @@ import {
 } from "recharts";
 import { getStatsSummary, getTrainingLoad, getVdot, getActivities } from "../api/client";
 import type { Activity } from "../types";
+import { useUnits } from "../contexts/UnitsContext";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-
-function fmtPace(s: number | null): string {
-  if (!s) return "–";
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")} /km`;
-}
 
 function fmtTime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -31,10 +25,6 @@ function fmtTime(s: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${sec}s`;
   return `${sec}s`;
-}
-
-function fmtDist(m: number): string {
-  return (m / 1000).toFixed(1) + " km";
 }
 
 // ── stat card ─────────────────────────────────────────────────────────────────
@@ -119,6 +109,7 @@ function TrainingLoadChart({ days }: { days: number }) {
 // ── recent activity row ───────────────────────────────────────────────────────
 
 function ActivityRow({ act }: { act: Activity }) {
+  const { fmtDist, fmtPace } = useUnits();
   return (
     <Link
       to={`/activities/${act.id}`}
@@ -149,6 +140,7 @@ type Period = (typeof PERIODS)[number];
 export default function Dashboard() {
   const [period, setPeriod] = useState<Period>("week");
   const [loadDays, setLoadDays] = useState(90);
+  const { fmtDist, fmtPace, fmtElev } = useUnits();
 
   const { data: summary } = useQuery({
     queryKey: ["stats-summary", period],
@@ -197,7 +189,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Distance"
-          value={summary ? `${summary.total_distance_km} km` : "–"}
+          value={summary ? fmtDist(summary.total_distance_km * 1000) : "–"}
         />
         <StatCard
           label="Time"
@@ -205,8 +197,8 @@ export default function Dashboard() {
         />
         <StatCard
           label="Avg pace"
-          value={fmtPace(summary?.avg_pace_s_per_km)}
-          sub={`${summary?.total_elevation_m ?? "–"} m gain`}
+          value={fmtPace(summary?.avg_pace_s_per_km ?? null)}
+          sub={summary ? `${fmtElev(summary.total_elevation_m)} gain` : "–"}
         />
       </div>
 

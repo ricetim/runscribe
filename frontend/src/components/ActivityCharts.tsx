@@ -11,6 +11,7 @@ import {
   Legend,
 } from "recharts";
 import { DataPoint } from "../types";
+import { useUnits } from "../contexts/UnitsContext";
 
 interface Props {
   datapoints: DataPoint[];
@@ -36,12 +37,6 @@ function formatElapsed(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function formatPaceLabel(sPerKm: number): string {
-  if (!sPerKm || sPerKm <= 0) return "";
-  const m = Math.floor(sPerKm / 60);
-  const s = Math.round(sPerKm % 60).toString().padStart(2, "0");
-  return `${m}:${s}/km`;
-}
 
 interface ChartRow {
   idx: number;
@@ -54,6 +49,7 @@ interface ChartRow {
 }
 
 export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex }: Props) {
+  const { fmtPace, fmtElev } = useUnits();
   const [activeOverlays, setActiveOverlays] = useState<Set<Overlay>>(
     new Set(["pace", "hr", "elevation"])
   );
@@ -121,9 +117,9 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
             {p.name}:{" "}
             <span className="font-semibold">
               {p.dataKey === "pace"
-                ? formatPaceLabel(p.value)
+                ? fmtPace(p.value)
                 : p.dataKey === "elevation"
-                ? `${p.value?.toFixed(1)} m`
+                ? fmtElev(p.value)
                 : p.dataKey === "hr"
                 ? `${p.value} bpm`
                 : p.dataKey === "cadence"
@@ -184,7 +180,7 @@ export default function ActivityCharts({ datapoints, onRangeChange, onHoverIndex
               orientation="left"
               reversed
               domain={["auto", "auto"]}
-              tickFormatter={(v) => formatPaceLabel(v)}
+              tickFormatter={(v) => fmtPace(v)}
               tick={{ fontSize: 10 }}
               width={52}
             />

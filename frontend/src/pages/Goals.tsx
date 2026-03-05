@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getGoals, createGoal, deleteGoal } from "../api/client";
+import { useUnits } from "../contexts/UnitsContext";
+
+const KM_PER_MI = 1.60934;
 
 interface Goal {
   id: number;
@@ -36,11 +39,17 @@ function ProgressBar({ pct }: { pct: number }) {
 }
 
 function GoalCard({ item, onDelete }: { item: GoalWithProgress; onDelete: () => void }) {
+  const { system } = useUnits();
   const { goal, progress_km } = item;
   const pct = (progress_km / goal.target_value) * 100;
   const typeLabel = GOAL_TYPES.find((t) => t.value === goal.type)?.label ?? goal.type;
   const start = new Date(goal.period_start).toLocaleDateString("en-GB", { month: "short", day: "numeric" });
   const end = new Date(goal.period_end).toLocaleDateString("en-GB", { month: "short", day: "numeric", year: "numeric" });
+
+  const fmtGoalDist = (km: number) =>
+    system === "imperial"
+      ? (km / KM_PER_MI).toFixed(1) + " mi"
+      : km.toFixed(1) + " km";
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -52,9 +61,9 @@ function GoalCard({ item, onDelete }: { item: GoalWithProgress; onDelete: () => 
         </div>
         <div className="text-right">
           <div className={`text-lg font-bold ${pct >= 100 ? "text-green-600" : "text-blue-600"}`}>
-            {progress_km.toFixed(1)} km
+            {fmtGoalDist(progress_km)}
           </div>
-          <div className="text-xs text-gray-400">of {goal.target_value} km</div>
+          <div className="text-xs text-gray-400">of {fmtGoalDist(goal.target_value)}</div>
         </div>
       </div>
       <ProgressBar pct={pct} />
@@ -73,13 +82,15 @@ function GoalCard({ item, onDelete }: { item: GoalWithProgress; onDelete: () => 
 
 export default function Goals() {
   const qc = useQueryClient();
+  const { system } = useUnits();
   const [showForm, setShowForm] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const yearEnd = `${new Date().getFullYear()}-12-31`;
 
+  const defaultTarget = system === "imperial" ? "62" : "100"; // ~100 km in miles
   const [form, setForm] = useState({
     type: "monthly_distance",
-    target_value: "100",
+    target_value: defaultTarget,
     period_start: today,
     period_end: yearEnd,
     notes: "",
@@ -91,13 +102,18 @@ export default function Goals() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createGoal({
-      type: form.type,
-      target_value: parseFloat(form.target_value),
-      period_start: form.period_start,
-      period_end: form.period_end,
-      notes: form.notes || null,
-    }),
+    mutationFn: () => {
+      const targetKm = system === "imperial"
+        ? parseFloat(form.target_value) * KM_PER_MI
+        : parseFloat(form.target_value);
+      return createGoal({
+        type: form.type,
+        target_value: targetKm,
+        period_start: form.period_start,
+        period_end: form.period_end,
+        notes: form.notes || null,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["goals"] });
       setShowForm(false);
@@ -138,7 +154,9 @@ export default function Goals() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Target (km)</label>
+              <label className="block text-xs text-gray-500 mb-1">
+                Target ({system === "imperial" ? "mi" : "km"})
+              </label>
               <input
                 type="number"
                 className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"

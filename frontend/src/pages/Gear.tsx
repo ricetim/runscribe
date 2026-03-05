@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getShoes, createShoe, updateShoe } from "../api/client";
+import { useUnits } from "../contexts/UnitsContext";
 
 interface Shoe {
   id: number;
@@ -22,10 +23,14 @@ function MileageBar({ used, limit }: { used: number; limit: number }) {
   );
 }
 
+const KM_PER_MI = 1.60934;
+
 export default function Gear() {
   const qc = useQueryClient();
+  const { system, fmtShoe } = useUnits();
+  const defaultThreshold = system === "imperial" ? "500" : "800";
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", brand: "", retirement_threshold_km: "800" });
+  const [form, setForm] = useState({ name: "", brand: "", retirement_threshold: defaultThreshold });
 
   const { data: shoes = [] } = useQuery<Shoe[]>({
     queryKey: ["shoes"],
@@ -33,14 +38,19 @@ export default function Gear() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createShoe({
-      name: form.name,
-      brand: form.brand || null,
-      retirement_threshold_km: parseFloat(form.retirement_threshold_km),
-    }),
+    mutationFn: () => {
+      const thresholdKm = system === "imperial"
+        ? parseFloat(form.retirement_threshold) * KM_PER_MI
+        : parseFloat(form.retirement_threshold);
+      return createShoe({
+        name: form.name,
+        brand: form.brand || null,
+        retirement_threshold_km: thresholdKm,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["shoes"] });
-      setForm({ name: "", brand: "", retirement_threshold_km: "800" });
+      setForm({ name: "", brand: "", retirement_threshold: defaultThreshold });
       setShowForm(false);
     },
   });
@@ -88,12 +98,14 @@ export default function Gear() {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Retirement threshold (km)</label>
+              <label className="block text-xs text-gray-500 mb-1">
+                Retirement threshold ({system === "imperial" ? "mi" : "km"})
+              </label>
               <input
                 type="number"
                 className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                value={form.retirement_threshold_km}
-                onChange={(e) => setForm((f) => ({ ...f, retirement_threshold_km: e.target.value }))}
+                value={form.retirement_threshold}
+                onChange={(e) => setForm((f) => ({ ...f, retirement_threshold: e.target.value }))}
               />
             </div>
           </div>
@@ -126,7 +138,7 @@ export default function Gear() {
                 </div>
                 <div className="text-right">
                   <div className="text-sm font-mono text-gray-700">
-                    {shoe.total_distance_km} / {shoe.retirement_threshold_km} km
+                    {fmtShoe(shoe.total_distance_km)} / {fmtShoe(shoe.retirement_threshold_km)}
                   </div>
                   <button
                     onClick={() => retireMutation.mutate(shoe.id)}
@@ -159,7 +171,7 @@ export default function Gear() {
                   {shoe.brand && <div className="text-xs text-gray-400">{shoe.brand}</div>}
                 </div>
                 <div className="text-sm font-mono text-gray-500">
-                  {shoe.total_distance_km} km
+                  {fmtShoe(shoe.total_distance_km)}
                 </div>
               </div>
             ))}

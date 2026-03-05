@@ -3,16 +3,12 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getActivity, getDataPoints, getPhotos } from "../api/client";
 import { Activity, DataPoint, Photo } from "../types";
+import { useUnits } from "../contexts/UnitsContext";
 import ActivityMap from "../components/ActivityMap";
 import ActivityCharts from "../components/ActivityCharts";
 import PhotoGallery from "../components/PhotoGallery";
 
-function formatPace(s: number | null): string {
-  if (!s) return "—";
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60).toString().padStart(2, "0");
-  return `${m}:${sec} /km`;
-}
+// formatPace is provided by useUnits()
 
 function formatDuration(s: number): string {
   const h = Math.floor(s / 3600);
@@ -40,12 +36,13 @@ function RangeSummary({
   datapoints: DataPoint[];
   range: [number, number];
 }) {
+  const { fmtDist, fmtPace } = useUnits();
   const slice = datapoints.slice(range[0], range[1] + 1);
   if (slice.length < 2) return null;
 
   const startDist = slice[0].distance_m ?? 0;
   const endDist = slice[slice.length - 1].distance_m ?? 0;
-  const distKm = (endDist - startDist) / 1000;
+  const distM = endDist - startDist;
 
   const t0 = new Date(slice[0].timestamp).getTime();
   const t1 = new Date(slice[slice.length - 1].timestamp).getTime();
@@ -60,9 +57,9 @@ function RangeSummary({
   return (
     <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm">
       <span className="font-medium text-orange-700 mr-3">Selected range:</span>
-      <span className="text-gray-700 mr-4">{distKm.toFixed(2)} km</span>
+      <span className="text-gray-700 mr-4">{fmtDist(distM)}</span>
       <span className="text-gray-700 mr-4">{formatDuration(durationS)}</span>
-      {avgPace && <span className="text-gray-700 mr-4">{formatPace(avgPace)}</span>}
+      {avgPace && <span className="text-gray-700 mr-4">{fmtPace(avgPace)}</span>}
       {avgHr && <span className="text-gray-700">{avgHr} bpm avg</span>}
     </div>
   );
@@ -73,6 +70,7 @@ export default function ActivityDetail() {
   const actId = Number(id);
   const [brushRange, setBrushRange] = useState<[number, number] | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const { fmtDist, fmtPace, fmtElev } = useUnits();
 
   const { data: act, isLoading: actLoading } = useQuery<Activity>({
     queryKey: ["activity", actId],
@@ -134,7 +132,7 @@ export default function ActivityDetail() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard
           label="Distance"
-          value={`${(act.distance_m / 1000).toFixed(2)} km`}
+          value={fmtDist(act.distance_m)}
         />
         <StatCard
           label="Time"
@@ -142,11 +140,11 @@ export default function ActivityDetail() {
         />
         <StatCard
           label="Avg Pace"
-          value={formatPace(act.avg_pace_s_per_km)}
+          value={fmtPace(act.avg_pace_s_per_km)}
         />
         <StatCard
           label="Elevation"
-          value={`${act.elevation_gain_m.toFixed(0)} m`}
+          value={fmtElev(act.elevation_gain_m)}
           sub="gain"
         />
         {act.avg_hr && (

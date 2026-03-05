@@ -2,17 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getActivities, uploadFit } from "../api/client";
 import { Activity } from "../types";
-
-function formatPace(s: number | null): string {
-  if (!s) return "—";
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60).toString().padStart(2, "0");
-  return `${m}:${sec} /km`;
-}
-
-function formatDist(m: number): string {
-  return (m / 1000).toFixed(2) + " km";
-}
+import { useUnits } from "../contexts/UnitsContext";
 
 function formatDuration(s: number): string {
   const h = Math.floor(s / 3600);
@@ -28,6 +18,7 @@ function formatDate(iso: string): string {
 
 export default function ActivityList() {
   const qc = useQueryClient();
+  const { fmtDist, fmtPace } = useUnits();
   const { data: activities = [], isLoading } = useQuery<Activity[]>({
     queryKey: ["activities"],
     queryFn: getActivities,
@@ -85,7 +76,7 @@ export default function ActivityList() {
               </div>
               <div className="flex gap-6 text-sm text-gray-600 text-right">
                 <div>
-                  <div className="font-semibold text-gray-900">{formatDist(a.distance_m)}</div>
+                  <div className="font-semibold text-gray-900">{fmtDist(a.distance_m)}</div>
                   <div className="text-xs text-gray-400">distance</div>
                 </div>
                 <div>
@@ -93,7 +84,7 @@ export default function ActivityList() {
                   <div className="text-xs text-gray-400">time</div>
                 </div>
                 <div>
-                  <div className="font-semibold text-gray-900">{formatPace(a.avg_pace_s_per_km)}</div>
+                  <div className="font-semibold text-gray-900">{fmtPace(a.avg_pace_s_per_km)}</div>
                   <div className="text-xs text-gray-400">avg pace</div>
                 </div>
                 {a.avg_hr && (

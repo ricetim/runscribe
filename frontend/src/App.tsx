@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { UnitsProvider, useUnits } from "./contexts/UnitsContext";
 import ActivityList from "./pages/ActivityList";
 import Dashboard from "./pages/Dashboard";
 import Gear from "./pages/Gear";
@@ -14,6 +15,7 @@ const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
 const queryClient = new QueryClient();
 
 function Nav() {
+  const { system, toggle } = useUnits();
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-2 rounded text-sm font-medium ${
       isActive
@@ -28,6 +30,13 @@ function Nav() {
       <NavLink to="/gear" className={linkClass}>Gear</NavLink>
       <NavLink to="/goals" className={linkClass}>Goals</NavLink>
       <NavLink to="/plans" className={linkClass}>Plans</NavLink>
+      <button
+        onClick={toggle}
+        className="ml-auto px-2.5 py-1 rounded text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-blue-100 border border-blue-600 transition-colors"
+        title="Toggle units"
+      >
+        {system === "imperial" ? "mi" : "km"}
+      </button>
     </nav>
   );
 }
@@ -35,6 +44,7 @@ function Nav() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <UnitsProvider>
       <BrowserRouter>
         <div className="min-h-screen">
           <Nav />
@@ -53,6 +63,7 @@ export default function App() {
           </main>
         </div>
       </BrowserRouter>
+      </UnitsProvider>
     </QueryClientProvider>
   );
 }
