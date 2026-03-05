@@ -21,4 +21,5 @@ should include the creation of training plans for popular sources like daniels a
 research how running metrics are calculated from first principles
 	metrics of interest: VO2Max, race time predictions (5k/10k/half/marathon), training stress, lactate threshold, running economy
 	source research papers where possible; note any book sources so they can be procured
-
+Add ability to create workouts based on the Daniels white, red, blue, and gold training plans detailed in his running formula book
+review this webpage for information:  https://fellrnr.com/wiki/Modeling_Human_Performance#The_Banister_Formula
