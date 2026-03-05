@@ -137,7 +137,7 @@ def get_vdot(session: Session = Depends(get_session)):
     hr_max = profile.hr_max
     hr_rest = profile.hr_rest
 
-    cutoff = date.today() - timedelta(days=90)
+    cutoff = date.today() - timedelta(days=28)
     acts = session.exec(
         select(Activity)
         .where(Activity.started_at >= cutoff.isoformat())
@@ -215,12 +215,17 @@ def get_vdot(session: Session = Depends(get_session)):
 @router.get("/personal-bests")
 def get_personal_bests(session: Session = Depends(get_session)):
     """
-    Best estimated time for common race distances (400 m → marathon).
+    Best predicted race times for common distances (400 m → marathon).
 
-    For each target distance, finds the minimum (avg_pace × target_dist)
-    across all activities whose total distance meets or exceeds the target.
-    Returns null for distances the athlete has never covered.
+    Finds the single best HR-adjusted VDOT across all activities (all-time,
+    not windowed), then uses the Daniels prediction model to project times
+    at each standard distance. This gives physiologically consistent
+    predictions rather than naive pace × distance extrapolation.
+
+    Returns null for all distances when no qualifying HR data exists.
     """
+    from app.services.analytics import predict_race_time_s
+
     DISTANCES = [
         ("400m",     400),
         ("800m",     800),
@@ -231,22 +236,37 @@ def get_personal_bests(session: Session = Depends(get_session)):
         ("marathon", 42195),
     ]
 
+    profile = session.get(UserProfile, 1) or UserProfile()
+    hr_max, hr_rest = profile.hr_max, profile.hr_rest
+
     acts = session.exec(
         select(Activity)
-        .where(Activity.avg_pace_s_per_km.is_not(None))
-        .where(Activity.distance_m > 0)
+        .where(Activity.avg_hr.is_not(None))
+        .where(Activity.distance_m >= 3000)
+        .where(Activity.duration_s > 0)
     ).all()
+
+    best_vdot: float | None = None
+    for act in acts:
+        if act.avg_hr and act.distance_m > 0 and act.duration_s > 0:
+            try:
+                v = compute_vdot_hr_adjusted(
+                    act.distance_m, act.duration_s, act.avg_hr, hr_max, hr_rest
+                )
+                if 20 < v < 85 and (best_vdot is None or v > best_vdot):
+                    best_vdot = v
+            except ValueError:
+                pass
+
+    if best_vdot is None:
+        return {label: None for label, _ in DISTANCES}
 
     results: dict[str, int | None] = {}
     for label, dist_m in DISTANCES:
-        best: float | None = None
-        for act in acts:
-            if act.distance_m >= dist_m * 0.95 and act.avg_pace_s_per_km:
-                estimated = act.avg_pace_s_per_km * (dist_m / 1000)
-                if best is None or estimated < best:
-                    best = estimated
-        results[label] = round(best) if best is not None else None
-
+        try:
+            results[label] = round(predict_race_time_s(best_vdot, dist_m))
+        except Exception:
+            results[label] = None
     return results
 
 
