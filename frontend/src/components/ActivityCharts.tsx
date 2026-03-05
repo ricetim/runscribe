@@ -56,8 +56,6 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
   );
   // zoomedRange is [startIdx, endIdx] into the full `data` array
   const [zoomedRange, setZoomedRange] = useState<[number, number] | null>(null);
-  // Last brush selection relative to displayData (used for zoom-in button)
-  const [brushIndices, setBrushIndices] = useState<[number, number] | null>(null);
 
   const data: ChartRow[] = useMemo(() => {
     if (!datapoints.length) return [];
@@ -96,19 +94,8 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
     });
   }
 
-  function zoomIn() {
-    if (!brushIndices) return;
-    const absStart = offset + brushIndices[0];
-    const absEnd = offset + brushIndices[1];
-    if (absEnd - absStart < 2) return;
-    setZoomedRange([absStart, absEnd]);
-    setBrushIndices(null);
-    onRangeChange?.(absStart, absEnd);
-  }
-
   function zoomOut() {
     setZoomedRange(null);
-    setBrushIndices(null);
     onRangeClear?.();
   }
 
@@ -119,10 +106,6 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
   );
   const paceActive = activeOverlays.has("pace");
 
-  // Is the current brush selection a proper sub-range (not the full display)?
-  const canZoomIn =
-    brushIndices != null &&
-    (brushIndices[0] > 0 || brushIndices[1] < displayData.length - 1);
 
   const CustomTooltip = ({
     active,
@@ -184,24 +167,14 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
           </button>
         ))}
 
-        <div className="ml-auto flex gap-1">
-          {canZoomIn && (
-            <button
-              onClick={zoomIn}
-              className="px-2.5 py-1 text-xs rounded border bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
-            >
-              Zoom in
-            </button>
-          )}
-          {zoomedRange && (
-            <button
-              onClick={zoomOut}
-              className="px-2.5 py-1 text-xs rounded border bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100"
-            >
-              Zoom out
-            </button>
-          )}
-        </div>
+        {zoomedRange && (
+          <button
+            onClick={zoomOut}
+            className="ml-auto px-2.5 py-1 text-xs rounded border bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100"
+          >
+            Reset zoom
+          </button>
+        )}
       </div>
 
       {/* Main chart */}
@@ -289,11 +262,14 @@ export default function ActivityCharts({ datapoints, onRangeChange, onRangeClear
             stroke="#94a3b8"
             tickFormatter={formatElapsed}
             onChange={(e: any) => {
-              if (e.startIndex !== undefined && e.endIndex !== undefined) {
-                setBrushIndices([e.startIndex, e.endIndex]);
-                const absStart = offset + e.startIndex;
-                const absEnd = offset + e.endIndex;
-                onRangeChange?.(absStart, absEnd);
+              const { startIndex: s, endIndex: en } = e ?? {};
+              if (s === undefined || en === undefined) return;
+              const absStart = offset + s;
+              const absEnd = offset + en;
+              onRangeChange?.(absStart, absEnd);
+              // Auto-zoom: if user selected a strict sub-range, zoom in
+              if (s > 0 || en < displayData.length - 1) {
+                setZoomedRange([absStart, absEnd]);
               }
             }}
           />

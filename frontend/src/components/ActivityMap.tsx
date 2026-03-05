@@ -38,21 +38,13 @@ function FitBounds({
 }) {
   const map = useMap();
 
-  // Fit to full route on initial mount only
   useEffect(() => {
-    if (coords.length >= 2) {
-      map.fitBounds(coords, { padding: [24, 24] });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords]);
-
-  // Fit to highlighted segment whenever it changes
-  useEffect(() => {
-    if (highlightedCoords && highlightedCoords.length >= 2) {
-      map.fitBounds(highlightedCoords, { padding: [40, 40] });
-    } else if (highlightedCoords === undefined && coords.length >= 2) {
-      // Cleared — zoom back to full route
-      map.fitBounds(coords, { padding: [24, 24] });
+    const target =
+      highlightedCoords && highlightedCoords.length >= 2
+        ? highlightedCoords
+        : coords;
+    if (target.length >= 2) {
+      map.fitBounds(target as L.LatLngBoundsExpression, { padding: [24, 24] });
     }
   }, [highlightedCoords, coords, map]);
 
