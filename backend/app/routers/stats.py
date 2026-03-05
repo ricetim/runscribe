@@ -212,62 +212,92 @@ def get_vdot(session: Session = Depends(get_session)):
     }
 
 
+def _find_fastest_segment(dps, target_m: float, tol: float = 0.05):
+    """
+    Two-pointer sliding window over sorted DataPoint objects.
+    Returns (time_s, start_elapsed_s, end_elapsed_s) or None.
+    """
+    pts = [(dp.distance_m, dp.timestamp) for dp in dps if dp.distance_m is not None and dp.timestamp is not None]
+    if len(pts) < 2:
+        return None
+    t0 = pts[0][1]
+    best = None
+    left = 0
+    for right in range(1, len(pts)):
+        span = pts[right][0] - pts[left][0]
+        while span > target_m * (1 + tol) and left < right - 1:
+            left += 1
+            span = pts[right][0] - pts[left][0]
+        if target_m * (1 - tol) <= span <= target_m * (1 + tol):
+            t = (pts[right][1] - pts[left][1]).total_seconds()
+            if t > 0 and (best is None or t < best[0]):
+                t_start = (pts[left][1] - t0).total_seconds()
+                t_end = (pts[right][1] - t0).total_seconds()
+                best = (t, t_start, t_end)
+    return best
+
+
 @router.get("/personal-bests")
 def get_personal_bests(session: Session = Depends(get_session)):
     """
-    Best predicted race times for common distances (400 m → marathon).
+    Fastest real segments for common distances (400 m → marathon).
 
-    Finds the single best HR-adjusted VDOT across all activities (all-time,
-    not windowed), then uses the Daniels prediction model to project times
-    at each standard distance. This gives physiologically consistent
-    predictions rather than naive pace × distance extrapolation.
-
-    Returns null for all distances when no qualifying HR data exists.
+    Uses a two-pointer sliding window over each activity's DataPoints to find
+    the fastest contiguous segment of approximately the target distance
+    (within ±5% tolerance). Scans all activities across all time.
     """
-    from app.services.analytics import predict_race_time_s
-
     DISTANCES = [
-        ("400m",     400),
-        ("800m",     800),
-        ("1 mile",   1609),
-        ("5k",       5000),
-        ("10k",      10000),
-        ("half",     21097),
-        ("marathon", 42195),
+        ("400m",     400.0),
+        ("800m",     800.0),
+        ("1 mile",   1609.0),
+        ("5k",       5000.0),
+        ("10k",      10000.0),
+        ("half",     21097.0),
+        ("marathon", 42195.0),
     ]
 
-    profile = session.get(UserProfile, 1) or UserProfile()
-    hr_max, hr_rest = profile.hr_max, profile.hr_rest
+    acts = session.exec(select(Activity)).all()
 
-    acts = session.exec(
-        select(Activity)
-        .where(Activity.avg_hr.is_not(None))
-        .where(Activity.distance_m >= 3000)
-        .where(Activity.duration_s > 0)
-    ).all()
+    # For each distance, track best (time_s, activity_id, start_elapsed_s, end_elapsed_s)
+    bests: dict[str, tuple[float, int, float, float] | None] = {label: None for label, _ in DISTANCES}
 
-    best_vdot: float | None = None
     for act in acts:
-        if act.avg_hr and act.distance_m > 0 and act.duration_s > 0:
-            try:
-                v = compute_vdot_hr_adjusted(
-                    act.distance_m, act.duration_s, act.avg_hr, hr_max, hr_rest
-                )
-                if 20 < v < 85 and (best_vdot is None or v > best_vdot):
-                    best_vdot = v
-            except ValueError:
-                pass
+        # Load datapoints for this activity ordered by timestamp
+        dps = session.exec(
+            select(DataPoint)
+            .where(DataPoint.activity_id == act.id)
+            .order_by(DataPoint.timestamp)
+        ).all()
 
-    if best_vdot is None:
-        return {label: None for label, _ in DISTANCES}
+        if len(dps) < 2:
+            continue
 
-    results: dict[str, int | None] = {}
-    for label, dist_m in DISTANCES:
-        try:
-            results[label] = round(predict_race_time_s(best_vdot, dist_m))
-        except Exception:
-            results[label] = None
-    return results
+        for label, target_m in DISTANCES:
+            # Skip activities too short to possibly contain this segment (with tolerance)
+            if act.distance_m < target_m * 0.95:
+                continue
+
+            result = _find_fastest_segment(dps, target_m)
+            if result is None:
+                continue
+
+            time_s, t_start, t_end = result
+            if bests[label] is None or time_s < bests[label][0]:
+                bests[label] = (time_s, act.id, t_start, t_end)
+
+    out = {}
+    for label, _ in DISTANCES:
+        b = bests[label]
+        if b is None:
+            out[label] = None
+        else:
+            out[label] = {
+                "time_s": int(round(b[0])),
+                "activity_id": b[1],
+                "start_elapsed_s": b[2],
+                "end_elapsed_s": b[3],
+            }
+    return out
 
 
 @router.get("/activities/{activity_id}/analytics")

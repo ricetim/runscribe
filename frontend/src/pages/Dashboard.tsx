@@ -73,8 +73,10 @@ function ZoneRow({
 
 const PB_DISTANCES = ["400m", "800m", "1 mile", "5k", "10k", "half", "marathon"] as const;
 
+type PBEntry = { time_s: number; activity_id: number; start_elapsed_s: number; end_elapsed_s: number } | null;
+
 function PersonalBests() {
-  const { data, isLoading } = useQuery<Record<string, number | null>>({
+  const { data, isLoading } = useQuery<Record<string, PBEntry>>({
     queryKey: ["personal-bests"],
     queryFn: getPersonalBests,
   });
@@ -87,14 +89,23 @@ function PersonalBests() {
       ) : (
         <div className="divide-y divide-gray-50">
           {PB_DISTANCES.map((label) => {
-            const secs = data?.[label] ?? null;
+            const entry = data?.[label] ?? null;
             return (
               <div key={label} className="flex items-center justify-between py-1.5">
                 <span className="text-sm text-gray-600 w-20">{label}</span>
-                {secs != null ? (
-                  <span className="text-sm font-semibold text-gray-900 font-mono">
-                    {fmtTime(secs)}
-                  </span>
+                {entry != null ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-900 font-mono">
+                      {fmtTime(entry.time_s)}
+                    </span>
+                    <Link
+                      to={`/activities/${entry.activity_id}?seg_start=${entry.start_elapsed_s}&seg_end=${entry.end_elapsed_s}`}
+                      className="text-blue-500 hover:text-blue-700 text-sm leading-none"
+                      title="View segment in activity"
+                    >
+                      →
+                    </Link>
+                  </div>
                 ) : (
                   <span className="text-sm text-gray-300">—</span>
                 )}

@@ -119,5 +119,6 @@ class PlannedWorkout(SQLModel, table=True):
     target_distance_m: Optional[float] = None
     target_pace_s_per_km: Optional[float] = None
     completed_activity_id: Optional[int] = Field(default=None, foreign_key="activity.id")
+    optional: bool = False
 
     plan: Optional[TrainingPlan] = Relationship(back_populates="workouts")

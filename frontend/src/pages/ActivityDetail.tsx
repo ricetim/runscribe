@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getActivity, getDataPoints, getPhotos } from "../api/client";
 import { Activity, DataPoint, Photo } from "../types";
@@ -68,6 +68,9 @@ function RangeSummary({
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const actId = Number(id);
+  const [searchParams] = useSearchParams();
+  const segStart = searchParams.get("seg_start") ? parseFloat(searchParams.get("seg_start")!) : null;
+  const segEnd = searchParams.get("seg_end") ? parseFloat(searchParams.get("seg_end")!) : null;
   const [brushRange, setBrushRange] = useState<[number, number] | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const { fmtDist, fmtPace, fmtElev } = useUnits();
@@ -86,6 +89,23 @@ export default function ActivityDetail() {
     queryKey: ["photos", actId],
     queryFn: () => getPhotos(actId),
   });
+
+  // Auto-zoom to personal-best segment when seg_start/seg_end query params are present
+  useEffect(() => {
+    if (!datapoints.length || segStart === null) return;
+    const t0 = new Date(datapoints[0].timestamp).getTime();
+    const toIdx = (targetS: number) => {
+      let best = 0;
+      let bestDiff = Infinity;
+      for (let i = 0; i < datapoints.length; i++) {
+        const diff = Math.abs((new Date(datapoints[i].timestamp).getTime() - t0) / 1000 - targetS);
+        if (diff < bestDiff) { bestDiff = diff; best = i; }
+      }
+      return best;
+    };
+    setBrushRange([toIdx(segStart), toIdx(segEnd ?? segStart)]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datapoints.length > 0]);
 
   if (actLoading) {
     return <div className="p-6 text-gray-500">Loading activity…</div>;

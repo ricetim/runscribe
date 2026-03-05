@@ -166,91 +166,191 @@ _TEMPLATES: dict[str, list] = {
 
 
 # ── Daniels phase plan templates (4 weeks each) ────────────────────────────
-# Each phase is a standalone 4-week training block.
-# Format per day: (workout_type, distance_km, description)
-# Days run Mon→Sun; "rest" days are included for completeness.
+# Each phase is a standalone 4-week training block following the 2Q structure
+# from Daniels' Running Formula (4th ed., 2022), Chapter 8.
+#
+# Every week has exactly 2 Q (quality) days and the remainder are E (easy) or rest.
+# Format per day: (workout_type, distance_km, description, optional)
+#   optional=True days are bonus easy runs — safe to skip if recovering.
+#
+# Days: Mon(0) Tue(1) Wed(2) Thu(3) Fri(4) Sat(5) Sun(6)
+# Layout: E  Q1  E  Q2  E  E  L
+# Q1 is the primary quality session; Q2 is the secondary quality session.
+# L (long run) is always easy pace and is NOT a Q day.
 
-# WHITE — Foundation: all easy mileage, introduces strides
+# WHITE — Phase I: Foundation. Q days are medium-long E runs with strides.
+# Purpose: establish aerobic base, neuromuscular efficiency via strides,
+# no anaerobic stress.
 _WHITE_PLAN = [
-    # Week 1
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km + 4×100m strides"),
-     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
-    # Week 2
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",10,"Easy 10 km + 4×100m strides"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
-    # Week 3
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",11,"Easy 11 km + 6×100m strides"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",19,"Long 19 km")],
-    # Week 4 — recovery
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km + 4×100m strides"),
-     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
+    # Week 1 (~50 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("easy",  10,  "Q1: E 10 km + 6×20 s strides (2 min E after each)", False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("easy",   8,  "Q2: E 8 km + 6×20 s strides",          False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  14,  "L 14 km easy",                          False)],
+    # Week 2 (~58 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("easy",  13,  "Q1: E 13 km + 6×20 s strides",         False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("easy",  10,  "Q2: E 10 km + 8×20 s strides",         False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  16,  "L 16 km easy",                          False)],
+    # Week 3 (~64 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("easy",  16,  "Q1: E 16 km + 8×20 s strides",         False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("easy",  11,  "Q2: E 11 km + 8×20 s strides",         False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  19,  "L 19 km easy",                          False)],
+    # Week 4 — recovery (~46 km)
+    [("easy",   5,  "E 5 km",                                False),
+     ("easy",   8,  "Q1: E 8 km + 4×20 s strides",          False),  # Q1
+     ("easy",   5,  "E 5 km",                                False),
+     ("easy",   6,  "Q2: E 6 km + 4×20 s strides",          False),  # Q2
+     ("rest",   0,  "Rest",                                   False),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  13,  "L 13 km easy",                          False)],
 ]
 
-# RED — Early quality: introduces R-pace repetitions and T-pace cruise intervals
+# RED — Phase II: R-pace. Q1 = Repetition (R), Q2 = Threshold (T cruise intervals).
+# Purpose: develop speed, economy, and lactate clearance via R-pace reps;
+# introduce T-pace for lactate threshold development.
 _RED_PLAN = [
-    # Week 1
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("repetition",8,"8 km: 2 km E + 6×200m @ R (200m jog) + 2 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
-    # Week 2
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("threshold",9,"9 km: 2 km E + 3×8 min @ T (90 s rest) + 2 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",18,"Long 18 km")],
-    # Week 3
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("repetition",10,"10 km: 2 km E + 8×200m @ R (200m jog) + 2 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",19,"Long 19 km")],
-    # Week 4 — recovery
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km + 4×100m strides"),
-     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",14,"Long 14 km")],
+    # Week 1 (~55 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("repetition", 9,
+      "Q1: 2 km E + 5×400 m @R (400 m jog) + 2 km E",       False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold",  8,
+      "Q2: 2 km E + 4×1 km @T (1 min rest) + 2 km E",       False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  16,  "L 16 km easy",                          False)],
+    # Week 2 (~58 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("repetition", 10,
+      "Q1: 2 km E + 6×400 m @R (400 m jog) + 4×200 m @R (200 m jog) + 2 km E", False),
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold",  9,
+      "Q2: 2 km E + 5×1 km @T (1 min rest) + 2 km E",       False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  18,  "L 18 km easy",                          False)],
+    # Week 3 (~62 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("repetition", 11,
+      "Q1: 2 km E + 3×800 m @R (800 m jog) + 4×400 m @R (400 m jog) + 2 km E", False),
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 10,
+      "Q2: 2 km E + 20 min @T continuous + 2 km E",          False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  19,  "L 19 km easy",                          False)],
+    # Week 4 — recovery (~46 km)
+    [("easy",   5,  "E 5 km",                                False),
+     ("repetition",  7,
+      "Q1: 2 km E + 4×400 m @R (400 m jog) + 2 km E",       False),  # Q1
+     ("easy",   5,  "E 5 km",                                False),
+     ("threshold",  7,
+      "Q2: 2 km E + 3×1 km @T (1 min rest) + 2 km E",       False),  # Q2
+     ("rest",   0,  "Rest",                                   False),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  14,  "L 14 km easy",                          False)],
 ]
 
-# BLUE — Interval quality: introduces I-pace work alongside T-pace
+# BLUE — Phase III: I-pace. Q1 = Interval (I), Q2 = Threshold (T longer).
+# Purpose: develop VO2max via I-pace work; extend T-pace volume.
 _BLUE_PLAN = [
-    # Week 1
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",10,"10 km: 2 km E + 4×1200m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",19,"Long 19 km")],
-    # Week 2
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("threshold",10,"10 km: 2 km E + 4×6 min @ T (1 min rest) + 2 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",21,"Long 21 km")],
-    # Week 3
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",12,"12 km: 2 km E + 5×1200m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",22,"Long 22 km")],
-    # Week 4 — recovery
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("threshold",8,"8 km: 2 km E + 2×10 min @ T (1 min rest) + 2 km E"),
-     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
+    # Week 1 (~60 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("interval", 11,
+      "Q1: 2 km E + 4×1200 m @I (3 min jog) + 1 km E",      False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 10,
+      "Q2: 2 km E + 5×1 km @T (1 min rest) + 2 km E",       False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  19,  "L 19 km easy",                          False)],
+    # Week 2 (~65 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("interval", 12,
+      "Q1: 2 km E + 5×1200 m @I (3 min jog) + 1 km E",      False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 11,
+      "Q2: 2 km E + 6×1 km @T (1 min rest) + 2 km E",       False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  21,  "L 21 km easy",                          False)],
+    # Week 3 (~68 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("interval", 12,
+      "Q1: 2 km E + 3×1600 m @I (400 m jog) + 1 km E",      False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 12,
+      "Q2: 2 km E + 25 min @T continuous + 2 km E",          False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  22,  "L 22 km easy",                          False)],
+    # Week 4 — recovery (~50 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("interval",  9,
+      "Q1: 2 km E + 3×1200 m @I (3 min jog) + 1 km E",      False),  # Q1
+     ("easy",   5,  "E 5 km",                                False),
+     ("threshold",  8,
+      "Q2: 2 km E + 3×1 km @T (1 min rest) + 2 km E",       False),  # Q2
+     ("rest",   0,  "Rest",                                   False),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  16,  "L 16 km easy",                          False)],
 ]
 
-# GOLD — Peak quality: combined I+T sessions with taper in week 4
+# GOLD — Phase IV: Peak / T-pace. Both Q days are hard.
+# Q1 = Interval (I) work; Q2 = long Threshold (T) or combined I+T.
+# Purpose: final quality sharpening; taper in week 4.
 _GOLD_PLAN = [
-    # Week 1
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",12,"12 km: 2 km E + 5×1000m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),
-     ("threshold",10,"10 km: 2 km E + 4×8 min @ T (90 s rest) + 1 km E"),
-     ("easy",6,"Easy 6 km"),("long",24,"Long 24 km")],
-    # Week 2
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",13,"13 km: 2 km E + 6×1000m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),
-     ("threshold",11,"11 km: 2 km E + 4×10 min @ T (1 min rest) + 1 km E"),
-     ("easy",6,"Easy 6 km"),("long",24,"Long 24 km")],
-    # Week 3
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",12,"12 km: 2 km E + 3×1600m @ I (400m jog) + 1 km E"),
-     ("rest",0,"Rest"),
-     ("threshold",10,"10 km: 2 km E + 5×6 min @ T (90 s rest) + 1 km E"),
-     ("easy",6,"Easy 6 km"),("long",22,"Long 22 km")],
-    # Week 4 — taper
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("interval",8,"8 km: 2 km E + 3×1000m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),
-     ("threshold",6,"6 km: 1 km E + 2×8 min @ T (1 min rest) + 1 km E"),
-     ("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
+    # Week 1 (~68 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("interval", 13,
+      "Q1: 2 km E + 5×1000 m @I (200 m jog) + 2 km T + 1 km E", False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 12,
+      "Q2: 2 km E + 30 min @T continuous + 2 km E",          False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  22,  "L 22 km easy",                          False)],
+    # Week 2 (~72 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("interval", 14,
+      "Q1: 2 km E + 3×1600 m @I (400 m jog) + 2 km T + 1 km E", False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 13,
+      "Q2: 2 km E + 35 min @T continuous + 2 km E",          False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  24,  "L 24 km easy",                          False)],
+    # Week 3 (~68 km)
+    [("easy",   8,  "E 8 km",                                False),
+     ("interval", 13,
+      "Q1: 2 km E + 5×1200 m @I (3 min jog) + 2 km T + 1 km E", False),  # Q1
+     ("easy",   6,  "E 6 km",                                False),
+     ("threshold", 11,
+      "Q2: 2 km E + 30 min @T continuous + 2 km E",          False),  # Q2
+     ("easy",   5,  "E 5 km (optional)",                     True),
+     ("easy",   5,  "E 5 km",                                False),
+     ("long",  22,  "L 22 km easy",                          False)],
+    # Week 4 — taper (~48 km)
+    [("easy",   6,  "E 6 km",                                False),
+     ("interval",  9,
+      "Q1: 2 km E + 3×1000 m @I (200 m jog) + 1 km T + 1 km E", False),  # Q1
+     ("easy",   5,  "E 5 km",                                False),
+     ("threshold",  8,
+      "Q2: 2 km E + 20 min @T continuous + 2 km E",          False),  # Q2
+     ("rest",   0,  "Rest",                                   False),
+     ("easy",   3,  "E 3 km shakeout",                       False),
+     ("long",  13,  "L 13 km easy",                          False)],
 ]
 
 
@@ -295,10 +395,11 @@ def generate_daniels_phase_plan(
     paces = vdot_paces(target_vdot)
     workouts = []
     for week_idx, week_days in enumerate(template, start=1):
-        for day_idx, (wtype, dist_km, desc) in enumerate(week_days):
+        for day_idx, (wtype, dist_km, desc, optional) in enumerate(week_days):
             scheduled = start_date + timedelta(weeks=week_idx - 1, days=day_idx)
             target_dist = dist_km * 1000 if dist_km > 0 else None
-            pace = paces.get(wtype) if wtype != "rest" else None
+            # Only assign a target pace for actual quality workout types
+            pace = paces.get(wtype) if wtype in ("repetition", "threshold", "interval", "marathon") else None
             workouts.append({
                 "scheduled_date": scheduled,
                 "week_number": week_idx,
@@ -306,6 +407,7 @@ def generate_daniels_phase_plan(
                 "description": desc,
                 "target_distance_m": target_dist,
                 "target_pace_s_per_km": pace,
+                "optional": optional,
             })
     return workouts
 
