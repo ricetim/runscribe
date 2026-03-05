@@ -165,57 +165,47 @@ _TEMPLATES: dict[str, list] = {
 }
 
 
-# WHITE — Foundation, all easy, introduces strides
-# Format: (workout_type, distance_km, description)
+# ── Daniels phase plan templates (4 weeks each) ────────────────────────────
+# Each phase is a standalone 4-week training block.
+# Format per day: (workout_type, distance_km, description)
+# Days run Mon→Sun; "rest" days are included for completeness.
+
+# WHITE — Foundation: all easy mileage, introduces strides
 _WHITE_PLAN = [
     # Week 1
     [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km + 4×100m strides"),
      ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
     # Week 2
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",10,"Easy 10 km + 4×100m strides"),
+    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",10,"Easy 10 km + 4×100m strides"),
      ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
     # Week 3
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",10,"Easy 10 km + 6×100m strides"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",18,"Long 18 km")],
-    # Week 4 — recovery
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km"),
-     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
-    # Week 5
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",10,"Easy 10 km + 6×100m strides"),
+    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",11,"Easy 11 km + 6×100m strides"),
      ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",19,"Long 19 km")],
-    # Week 6
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),("easy",11,"Easy 11 km + 8×100m strides"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",21,"Long 21 km")],
+    # Week 4 — recovery
+    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km + 4×100m strides"),
+     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
 ]
 
-# RED — Introduces R-pace repetitions and T-pace
+# RED — Early quality: introduces R-pace repetitions and T-pace cruise intervals
 _RED_PLAN = [
     # Week 1
     [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("repetition",8,"8 km: 2 km E + 6×200m @ R + 2 km E"),
+     ("repetition",8,"8 km: 2 km E + 6×200m @ R (200m jog) + 2 km E"),
      ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
     # Week 2
     [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("threshold",8,"8 km: 2 km E + 2×8 min @ T (90 s rest) + 2 km E"),
+     ("threshold",9,"9 km: 2 km E + 3×8 min @ T (90 s rest) + 2 km E"),
      ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",18,"Long 18 km")],
     # Week 3
     [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("repetition",10,"10 km: 2 km E + 8×200m @ R + 2 km E"),
+     ("repetition",10,"10 km: 2 km E + 8×200m @ R (200m jog) + 2 km E"),
      ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",19,"Long 19 km")],
     # Week 4 — recovery
     [("easy",6,"Easy 6 km"),("rest",0,"Rest"),("easy",8,"Easy 8 km + 4×100m strides"),
      ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",14,"Long 14 km")],
-    # Week 5
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("threshold",10,"10 km: 2 km E + 3×10 min @ T (1 min rest) + 2 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",21,"Long 21 km")],
-    # Week 6
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("repetition",10,"10 km: 2 km E + 10×200m @ R + 2 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",22,"Long 22 km")],
 ]
 
-# BLUE — Introduces I-pace intervals; mix of T and I quality days
+# BLUE — Interval quality: introduces I-pace work alongside T-pace
 _BLUE_PLAN = [
     # Week 1
     [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
@@ -233,19 +223,9 @@ _BLUE_PLAN = [
     [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
      ("threshold",8,"8 km: 2 km E + 2×10 min @ T (1 min rest) + 2 km E"),
      ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
-    # Week 5
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",12,"12 km: 2 km E + 3×1600m @ I (400m jog) + 1 km E"),
-     ("rest",0,"Rest"),("easy",8,"Easy 8 km"),("easy",6,"Easy 6 km"),("long",24,"Long 24 km")],
-    # Week 6
-    [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
-     ("interval",12,"12 km: 2 km E + 6×1000m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),
-     ("threshold",8,"8 km: 2 km E + 3×8 min @ T (90 s rest) + 1 km E"),
-     ("easy",6,"Easy 6 km"),("long",24,"Long 24 km")],
 ]
 
-# GOLD — Peak quality: combines I-pace, T-pace, and race-simulation; taper in wk 5-6
+# GOLD — Peak quality: combined I+T sessions with taper in week 4
 _GOLD_PLAN = [
     # Week 1
     [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
@@ -258,28 +238,19 @@ _GOLD_PLAN = [
      ("interval",13,"13 km: 2 km E + 6×1000m @ I (200m jog) + 1 km E"),
      ("rest",0,"Rest"),
      ("threshold",11,"11 km: 2 km E + 4×10 min @ T (1 min rest) + 1 km E"),
-     ("easy",6,"Easy 6 km"),("long",26,"Long 26 km")],
+     ("easy",6,"Easy 6 km"),("long",24,"Long 24 km")],
     # Week 3
     [("easy",8,"Easy 8 km"),("rest",0,"Rest"),
      ("interval",12,"12 km: 2 km E + 3×1600m @ I (400m jog) + 1 km E"),
      ("rest",0,"Rest"),
      ("threshold",10,"10 km: 2 km E + 5×6 min @ T (90 s rest) + 1 km E"),
-     ("easy",6,"Easy 6 km"),("long",24,"Long 24 km")],
-    # Week 4 — recovery
-    [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
-     ("interval",8,"8 km: 2 km E + 4×800m @ I (200m jog) + 1 km E"),
-     ("rest",0,"Rest"),("easy",6,"Easy 6 km"),("easy",5,"Easy 5 km"),("long",16,"Long 16 km")],
-    # Week 5 — taper
+     ("easy",6,"Easy 6 km"),("long",22,"Long 22 km")],
+    # Week 4 — taper
     [("easy",6,"Easy 6 km"),("rest",0,"Rest"),
      ("interval",8,"8 km: 2 km E + 3×1000m @ I (200m jog) + 1 km E"),
      ("rest",0,"Rest"),
      ("threshold",6,"6 km: 1 km E + 2×8 min @ T (1 min rest) + 1 km E"),
      ("easy",5,"Easy 5 km"),("long",13,"Long 13 km")],
-    # Week 6 — peak taper / pre-race
-    [("easy",5,"Easy 5 km"),("rest",0,"Rest"),
-     ("repetition",5,"5 km: 1 km E + 4×400m @ R + 1 km E"),
-     ("rest",0,"Rest"),("easy",3,"Easy 3 km"),("easy",3,"Shakeout 3 km"),
-     ("rest",0,"Race day (or final shakeout)")],
 ]
 
 
@@ -293,30 +264,35 @@ _PHASE_PLANS: dict[str, list] = {
 
 def generate_daniels_phase_plan(
     phase: str,
-    goal_race_date: date,
     target_vdot: float,
+    start_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Generate a 6-week Daniels phase plan (white/red/blue/gold).
+    Generate a 4-week Daniels phase training block (white/red/blue/gold).
 
-    White: Foundation — all easy running with strides
-    Red:   Early quality — introduces R-pace repetitions and T-pace
-    Blue:  Quality — introduces I-pace intervals alongside T-pace
-    Gold:  Championship — peak I+T combination with final taper
+    Only input required is the target VDOT; start_date defaults to the
+    next Monday on or after today if not provided.
+
+    White: Foundation — easy mileage and strides
+    Red:   Early quality — R-pace repetitions and T-pace cruise intervals
+    Blue:  Interval quality — I-pace work alongside T-pace
+    Gold:  Peak quality — combined I+T sessions with taper
 
     Args:
-        phase:          "white" | "red" | "blue" | "gold"
-        goal_race_date: end date of the plan (day 42 = last Sunday)
-        target_vdot:    runner's current VDOT for pace calculations
+        phase:        "white" | "red" | "blue" | "gold"
+        target_vdot:  runner's VDOT for pace zone calculations
+        start_date:   first Monday of the plan (defaults to next Monday)
     """
     template = _PHASE_PLANS.get(phase)
     if template is None:
         raise ValueError(f"Unknown Daniels phase: {phase!r}. Use white/red/blue/gold.")
 
-    num_weeks = len(template)
-    start_date = goal_race_date - timedelta(weeks=num_weeks - 1, days=6)
-    paces = vdot_paces(target_vdot)
+    if start_date is None:
+        today = date.today()
+        days_until_monday = (7 - today.weekday()) % 7  # 0 if today is Monday
+        start_date = today + timedelta(days=days_until_monday)
 
+    paces = vdot_paces(target_vdot)
     workouts = []
     for week_idx, week_days in enumerate(template, start=1):
         for day_idx, (wtype, dist_km, desc) in enumerate(week_days):

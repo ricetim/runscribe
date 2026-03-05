@@ -8,6 +8,7 @@ import Gear from "./pages/Gear";
 import Goals from "./pages/Goals";
 import Plans from "./pages/Plans";
 import PlanDetail from "./pages/PlanDetail";
+import CalendarView from "./pages/CalendarView";
 
 // Lazy-load ActivityDetail so Leaflet only initialises when the map is needed
 const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
@@ -27,6 +28,7 @@ function Nav() {
       <span className="font-bold text-lg mr-4">RunScribe</span>
       <NavLink to="/" end className={linkClass}>Dashboard</NavLink>
       <NavLink to="/activities" className={linkClass}>Activities</NavLink>
+      <NavLink to="/calendar" className={linkClass}>Calendar</NavLink>
       <NavLink to="/gear" className={linkClass}>Gear</NavLink>
       <NavLink to="/goals" className={linkClass}>Goals</NavLink>
       <NavLink to="/plans" className={linkClass}>Plans</NavLink>
@@ -58,6 +60,7 @@ export default function App() {
                 <Route path="/goals" element={<Goals />} />
                 <Route path="/plans" element={<Plans />} />
                 <Route path="/plans/:id" element={<PlanDetail />} />
+                <Route path="/calendar" element={<CalendarView />} />
               </Routes>
             </Suspense>
           </main>

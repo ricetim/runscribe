@@ -17,12 +17,14 @@ interface Plan {
 
 const SOURCES = [
   { value: "daniels",       label: "Daniels — Full Marathon Plan" },
-  { value: "daniels_white", label: "Daniels — White (Foundation, 6 wks)" },
-  { value: "daniels_red",   label: "Daniels — Red (Early Quality, 6 wks)" },
-  { value: "daniels_blue",  label: "Daniels — Blue (Intervals, 6 wks)" },
-  { value: "daniels_gold",  label: "Daniels — Gold (Peak Quality, 6 wks)" },
+  { value: "daniels_white", label: "Daniels — White (Foundation, 4 wks)" },
+  { value: "daniels_red",   label: "Daniels — Red (Early Quality, 4 wks)" },
+  { value: "daniels_blue",  label: "Daniels — Blue (Intervals, 4 wks)" },
+  { value: "daniels_gold",  label: "Daniels — Gold (Peak Quality, 4 wks)" },
   { value: "pfitzinger",    label: "Pfitzinger 18/55" },
 ];
+
+const PHASE_SOURCES = new Set(["daniels_white", "daniels_red", "daniels_blue", "daniels_gold"]);
 
 const DISTANCES = ["5k", "10k", "half", "marathon"];
 
@@ -33,6 +35,7 @@ export default function Plans() {
     source: "daniels",
     goal_distance: "marathon",
     goal_race_date: "",
+    start_date: "",
     target_vdot: "",
     peak_weekly_km: "88",
     name: "",
@@ -51,16 +54,22 @@ export default function Plans() {
 
   const createMutation = useMutation({
     mutationFn: () => {
+      const isPhase = PHASE_SOURCES.has(form.source);
       const payload: Record<string, unknown> = {
         source: form.source,
-        goal_distance: form.goal_distance,
-        goal_race_date: form.goal_race_date,
         name: form.name || undefined,
         notes: form.notes || undefined,
       };
-      if (form.source.startsWith("daniels")) {
+      if (isPhase) {
+        payload.target_vdot = parseFloat(form.target_vdot);
+        if (form.start_date) payload.start_date = form.start_date;
+      } else if (form.source === "daniels") {
+        payload.goal_distance = form.goal_distance;
+        payload.goal_race_date = form.goal_race_date;
         payload.target_vdot = parseFloat(form.target_vdot);
       } else {
+        payload.goal_distance = form.goal_distance;
+        payload.goal_race_date = form.goal_race_date;
         payload.peak_weekly_km = parseFloat(form.peak_weekly_km);
       }
       return createPlan(payload);
@@ -93,84 +102,119 @@ export default function Plans() {
       {showForm && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-gray-700">Generate Training Plan</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Plan source</label>
-              <select
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                value={form.source}
-                onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-              >
-                {SOURCES.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Goal distance</label>
-              <select
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                value={form.goal_distance}
-                onChange={(e) => setForm((f) => ({ ...f, goal_distance: e.target.value }))}
-              >
-                {DISTANCES.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Race date</label>
-              <input
-                type="date"
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                value={form.goal_race_date}
-                onChange={(e) => setForm((f) => ({ ...f, goal_race_date: e.target.value }))}
-              />
-            </div>
-            {form.source.startsWith("daniels") ? (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Target VDOT{suggestedVdot && ` (current: ${suggestedVdot})`}
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
+          {(() => {
+            const isPhase = PHASE_SOURCES.has(form.source);
+            return (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Plan source</label>
+                <select
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                  value={form.target_vdot}
-                  onChange={(e) => setForm((f) => ({ ...f, target_vdot: e.target.value }))}
-                  placeholder={suggestedVdot || "e.g. 50.0"}
+                  value={form.source}
+                  onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+                >
+                  {SOURCES.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Phase plans: only VDOT + optional start date */}
+              {isPhase ? (
+                <>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Target VDOT{suggestedVdot && ` (current: ${suggestedVdot})`}
+                    </label>
+                    <input
+                      type="number" step="0.1"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                      value={form.target_vdot}
+                      onChange={(e) => setForm((f) => ({ ...f, target_vdot: e.target.value }))}
+                      placeholder={suggestedVdot || "e.g. 42.0"}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Start date (optional, defaults to next Monday)</label>
+                    <input
+                      type="date"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                      value={form.start_date}
+                      onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {form.source !== "daniels" || true ? (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Goal distance</label>
+                      <select
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                        value={form.goal_distance}
+                        onChange={(e) => setForm((f) => ({ ...f, goal_distance: e.target.value }))}
+                      >
+                        {DISTANCES.map((d) => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  ) : null}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Race date</label>
+                    <input
+                      type="date"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                      value={form.goal_race_date}
+                      onChange={(e) => setForm((f) => ({ ...f, goal_race_date: e.target.value }))}
+                    />
+                  </div>
+                  {form.source === "daniels" ? (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Target VDOT{suggestedVdot && ` (current: ${suggestedVdot})`}
+                      </label>
+                      <input
+                        type="number" step="0.1"
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                        value={form.target_vdot}
+                        onChange={(e) => setForm((f) => ({ ...f, target_vdot: e.target.value }))}
+                        placeholder={suggestedVdot || "e.g. 50.0"}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Peak weekly km</label>
+                      <input
+                        type="number"
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                        value={form.peak_weekly_km}
+                        onChange={(e) => setForm((f) => ({ ...f, peak_weekly_km: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Plan name (optional)</label>
+                <input
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Auto-generated if blank"
                 />
               </div>
-            ) : (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Peak weekly km</label>
+                <label className="block text-xs text-gray-500 mb-1">Notes</label>
                 <input
-                  type="number"
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                  value={form.peak_weekly_km}
-                  onChange={(e) => setForm((f) => ({ ...f, peak_weekly_km: e.target.value }))}
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Optional"
                 />
               </div>
-            )}
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Plan name (optional)</label>
-              <input
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Auto-generated if blank"
-              />
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Notes</label>
-              <input
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Optional"
-              />
-            </div>
-          </div>
+            );
+          })()}
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowForm(false)}
@@ -180,7 +224,7 @@ export default function Plans() {
             </button>
             <button
               onClick={() => createMutation.mutate()}
-              disabled={!form.goal_race_date || createMutation.isPending}
+              disabled={(!PHASE_SOURCES.has(form.source) && !form.goal_race_date) || !form.target_vdot && form.source !== "pfitzinger" || createMutation.isPending}
               className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded disabled:opacity-50"
             >
               {createMutation.isPending ? "Generating…" : "Generate"}

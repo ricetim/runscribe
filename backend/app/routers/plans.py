@@ -4,7 +4,7 @@ from app.database import get_session
 from app.models import TrainingPlan, PlannedWorkout
 from app.services.training_plans.daniels import generate_daniels_plan, generate_daniels_phase_plan
 from app.services.training_plans.pfitzinger import generate_pfitzinger_plan
-from datetime import date
+from datetime import date, timedelta
 
 router = APIRouter(prefix="/api/plans", tags=["plans"])
 
@@ -17,9 +17,12 @@ def list_plans(session: Session = Depends(get_session)):
 @router.post("", status_code=201)
 def create_plan(data: dict, session: Session = Depends(get_session)):
     source = data.get("source")
-    goal_race_date = date.fromisoformat(data["goal_race_date"])
+    race_date_raw = data.get("goal_race_date")
+    goal_race_date = date.fromisoformat(race_date_raw) if race_date_raw else None
 
     if source == "daniels":
+        if not goal_race_date:
+            raise HTTPException(status_code=422, detail="goal_race_date required for daniels plan")
         workouts_data = generate_daniels_plan(
             goal_distance=data["goal_distance"],
             goal_race_date=goal_race_date,
@@ -27,13 +30,15 @@ def create_plan(data: dict, session: Session = Depends(get_session)):
         )
         start = workouts_data[0]["scheduled_date"]
     elif source in ("daniels_white", "daniels_red", "daniels_blue", "daniels_gold"):
-        phase = source.split("_", 1)[1]  # "white", "red", etc.
+        phase = source.split("_", 1)[1]
+        start_date = date.fromisoformat(data["start_date"]) if data.get("start_date") else None
         workouts_data = generate_daniels_phase_plan(
             phase=phase,
-            goal_race_date=goal_race_date,
             target_vdot=float(data["target_vdot"]),
+            start_date=start_date,
         )
         start = workouts_data[0]["scheduled_date"]
+        goal_race_date = workouts_data[-1]["scheduled_date"]
     elif source == "pfitzinger":
         workouts_data = generate_pfitzinger_plan(
             goal_race_date=goal_race_date,

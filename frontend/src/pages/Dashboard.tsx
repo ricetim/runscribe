@@ -12,7 +12,7 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from "recharts";
-import { getStatsSummary, getTrainingLoad, getVdot, getActivities, getPersonalBests } from "../api/client";
+import { getStatsSummary, getTrainingLoad, getVdot, getActivities, getPersonalBests, getGoals } from "../api/client";
 import type { Activity } from "../types";
 import { useUnits } from "../contexts/UnitsContext";
 import RouteThumbnail from "../components/RouteThumbnail";
@@ -103,6 +103,52 @@ function PersonalBests() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── goals widget ─────────────────────────────────────────────────────────────
+
+function GoalsWidget() {
+  const { fmtDist, system } = useUnits();
+  const { data: goals = [] } = useQuery<{ goal: { id: number; type: string; target_value: number; period_start: string; period_end: string }; progress_km: number }[]>({
+    queryKey: ["goals"],
+    queryFn: getGoals,
+  });
+
+  if (goals.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-gray-700">Goals</h2>
+        <Link to="/goals" className="text-xs text-blue-600 hover:underline">Manage →</Link>
+      </div>
+      <div className="space-y-3">
+        {goals.map(({ goal, progress_km }) => {
+          const target = system === "imperial" ? goal.target_value * 0.621371 : goal.target_value;
+          const progress = system === "imperial" ? progress_km * 0.621371 : progress_km;
+          const pct = Math.min(100, Math.round((progress / target) * 100));
+          const label = goal.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+          return (
+            <div key={goal.id}>
+              <div className="flex justify-between text-xs text-gray-600 mb-1">
+                <span>{label}</span>
+                <span className="font-medium">
+                  {fmtDist(progress_km * 1000)} / {fmtDist(goal.target_value * 1000)}
+                  <span className="ml-1 text-gray-400">({pct}%)</span>
+                </span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-green-500" : "bg-blue-500"}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -246,6 +292,8 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      <GoalsWidget />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
