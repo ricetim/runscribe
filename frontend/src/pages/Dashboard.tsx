@@ -1,18 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  CartesianGrid,
-  ReferenceLine,
-} from "recharts";
-import { getStatsSummary, getTrainingLoad, getVdot, getActivities, getPersonalBests, getGoals } from "../api/client";
+import { getStatsSummary, getActivities, getPersonalBests, getGoals, getActivityFull, getDataPoints } from "../api/client";
 import type { Activity } from "../types";
 import { useUnits } from "../contexts/UnitsContext";
 import RouteThumbnail from "../components/RouteThumbnail";
@@ -49,36 +38,21 @@ function StatCard({
   );
 }
 
-// ── VDOT zone row ─────────────────────────────────────────────────────────────
-
-function ZoneRow({
-  label,
-  pace,
-  color,
-}: {
-  label: string;
-  pace: string;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center gap-3 py-1">
-      <span className={`w-2 h-2 rounded-full ${color}`} />
-      <span className="w-20 text-sm font-medium text-gray-700">{label}</span>
-      <span className="text-sm text-gray-500 font-mono">{pace}</span>
-    </div>
-  );
-}
-
 // ── personal bests ────────────────────────────────────────────────────────────
 
-const PB_DISTANCES = ["400m", "800m", "1 mile", "5k", "10k", "half", "marathon"] as const;
+const PB_DISTANCES = [
+  "400m", "800m", "1k", "1 mile", "2 mile", "3k", "5k", "8k",
+  "10k", "15k", "10 mile", "20k", "half", "25k", "30k", "marathon",
+] as const;
 
-type PBEntry = { time_s: number; activity_id: number; start_elapsed_s: number; end_elapsed_s: number } | null;
+type PBEntry = { rank: number; time_s: number; activity_id: number; start_elapsed_s: number; end_elapsed_s: number };
+type PBData = Record<string, PBEntry[] | null>;
 
 function PersonalBests() {
-  const { data, isLoading } = useQuery<Record<string, PBEntry>>({
+  const { data, isLoading } = useQuery<PBData>({
     queryKey: ["personal-bests"],
     queryFn: getPersonalBests,
+    staleTime: Infinity,  // static file — only changes after a write
   });
 
   return (
@@ -89,17 +63,17 @@ function PersonalBests() {
       ) : (
         <div className="divide-y divide-gray-50">
           {PB_DISTANCES.map((label) => {
-            const entry = data?.[label] ?? null;
+            const best = data?.[label]?.[0] ?? null;
             return (
               <div key={label} className="flex items-center justify-between py-1.5">
                 <span className="text-sm text-gray-600 w-20">{label}</span>
-                {entry != null ? (
+                {best != null ? (
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-gray-900 font-mono">
-                      {fmtTime(entry.time_s)}
+                      {fmtTime(best.time_s)}
                     </span>
                     <Link
-                      to={`/activities/${entry.activity_id}?seg_start=${entry.start_elapsed_s}&seg_end=${entry.end_elapsed_s}`}
+                      to={`/activities/${best.activity_id}?seg_start=${best.start_elapsed_s}&seg_end=${best.end_elapsed_s}`}
                       className="text-blue-500 hover:text-blue-700 text-sm leading-none"
                       title="View segment in activity"
                     >
@@ -125,6 +99,7 @@ function GoalsWidget() {
   const { data: goals = [] } = useQuery<{ goal: { id: number; type: string; target_value: number; period_start: string; period_end: string }; progress_km: number }[]>({
     queryKey: ["goals"],
     queryFn: getGoals,
+    staleTime: Infinity,  // static file — only changes after a write
   });
 
   if (goals.length === 0) return null;
@@ -141,10 +116,41 @@ function GoalsWidget() {
           const progress = system === "imperial" ? progress_km * 0.621371 : progress_km;
           const pct = Math.min(100, Math.round((progress / target) * 100));
           const label = goal.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+          const now = Date.now();
+          const start = new Date(goal.period_start).getTime();
+          const end = new Date(goal.period_end).getTime();
+          const totalDays = (end - start) || 1;
+          const elapsed = Math.max(0, Math.min(now - start, totalDays));
+          const expectedPct = elapsed / totalDays;
+          const actualPct = progress_km / goal.target_value;
+          const done = now >= end;
+          const onTrack = actualPct >= expectedPct;
+
+          const trackLabel = done
+            ? pct >= 100 ? "Achieved!" : "Not reached"
+            : onTrack ? "On track" : "Behind pace";
+          const trackColor = done
+            ? pct >= 100 ? "text-green-600" : "text-red-500"
+            : onTrack ? "text-green-600" : "text-orange-500";
+
+          // Projection: extrapolate current pace through end of period
+          let projText: string | null = null;
+          if (!done && elapsed > 0 && actualPct > 0) {
+            const projKm = progress_km / (elapsed / totalDays);
+            projText = `Projected: ${fmtDist(projKm * 1000)}`;
+          }
+
+          const isExpiredMiss = done && pct < 100;
           return (
-            <div key={goal.id}>
+            <div key={goal.id} className={isExpiredMiss ? "opacity-50" : ""}>
               <div className="flex justify-between text-xs text-gray-600 mb-1">
-                <span>{label}</span>
+                <span className="flex items-center gap-1.5">
+                  {label}
+                  {isExpiredMiss && (
+                    <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">Expired</span>
+                  )}
+                </span>
                 <span className="font-medium">
                   {fmtDist(progress_km * 1000)} / {fmtDist(goal.target_value * 1000)}
                   <span className="ml-1 text-gray-400">({pct}%)</span>
@@ -152,54 +158,19 @@ function GoalsWidget() {
               </div>
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-green-500" : "bg-blue-500"}`}
+                  className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-green-500" : isExpiredMiss ? "bg-gray-400" : "bg-blue-500"}`}
                   style={{ width: `${pct}%` }}
                 />
+              </div>
+              <div className="flex items-center justify-between mt-0.5">
+                <div className={`text-[10px] ${trackColor}`}>{trackLabel}</div>
+                {projText && <div className="text-[10px] text-gray-400 italic">{projText}</div>}
               </div>
             </div>
           );
         })}
       </div>
     </div>
-  );
-}
-
-// ── training load chart ───────────────────────────────────────────────────────
-
-function TrainingLoadChart({ days }: { days: number }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["training-load", days],
-    queryFn: () => getTrainingLoad(days),
-  });
-
-  if (isLoading) return <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading…</div>;
-  if (!data?.length) return <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No training data</div>;
-
-  // Show every N-th label to avoid clutter
-  const step = days > 60 ? 14 : 7;
-
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis
-          dataKey="date"
-          tick={{ fontSize: 10 }}
-          interval={step - 1}
-          tickFormatter={(v: string) => v.slice(5)} // MM-DD
-        />
-        <YAxis tick={{ fontSize: 10 }} />
-        <Tooltip
-          formatter={(v: unknown, name: string) => [(v as number)?.toFixed(1) ?? "–", name.toUpperCase()]}
-          labelFormatter={(l) => `Date: ${l}`}
-        />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
-        <ReferenceLine y={0} stroke="#ccc" />
-        <Line type="monotone" dataKey="ctl" name="CTL (fitness)" stroke="#3b82f6" dot={false} strokeWidth={2} />
-        <Line type="monotone" dataKey="atl" name="ATL (fatigue)" stroke="#ef4444" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
-        <Line type="monotone" dataKey="tsb" name="TSB (form)" stroke="#22c55e" dot={false} strokeWidth={1.5} />
-      </LineChart>
-    </ResponsiveContainer>
   );
 }
 
@@ -213,10 +184,15 @@ function formatWorkoutName(sportType: string, plannedWorkoutType?: string | null
 
 function ActivityRow({ act }: { act: Activity }) {
   const { fmtDist, fmtPace } = useUnits();
+  const qc = useQueryClient();
   return (
     <Link
       to={`/activities/${act.id}`}
       className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all"
+      onMouseEnter={() => {
+        qc.prefetchQuery({ queryKey: ["activity-full", act.id], queryFn: () => getActivityFull(act.id), staleTime: Infinity });
+        qc.prefetchQuery({ queryKey: ["datapoints", act.id], queryFn: () => getDataPoints(act.id), staleTime: Infinity });
+      }}
     >
       <RouteThumbnail track={act.track} width={96} height={72} />
       <div className="flex-1 min-w-0">
@@ -255,6 +231,62 @@ function ActivityRow({ act }: { act: Activity }) {
   );
 }
 
+// ── featured (most recent) activity ──────────────────────────────────────────
+
+function FeaturedActivity({ act }: { act: Activity }) {
+  const { fmtDist, fmtPace } = useUnits();
+  return (
+    <Link
+      to={`/activities/${act.id}`}
+      className="block bg-white rounded-xl border border-gray-200 hover:border-blue-400 shadow-sm hover:shadow-md transition-all overflow-hidden"
+    >
+      <div className="flex flex-col sm:flex-row">
+        {(act.track ?? []).length > 0 && (
+          <div className="sm:w-56 sm:flex-shrink-0 bg-gray-50 flex items-center justify-center p-2">
+            <RouteThumbnail track={act.track} width={200} height={140} />
+          </div>
+        )}
+        <div className="flex-1 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-gray-400">
+              {new Date(act.started_at).toLocaleDateString(undefined, {
+                weekday: "long", month: "long", day: "numeric",
+              })}
+            </span>
+            {act.rpe != null && act.rpe > 0 && <RpeBadge rpe={act.rpe} />}
+          </div>
+          <div className="text-xl font-bold text-gray-900 mb-2">
+            {act.name || act.sport_type.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+          </div>
+          <div className="flex flex-wrap gap-6">
+            <div>
+              <div className="text-2xl font-bold text-blue-600">{fmtDist(act.distance_m)}</div>
+              <div className="text-xs text-gray-400">distance</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-gray-800">{fmtTime(act.duration_s)}</div>
+              <div className="text-xs text-gray-400">time</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-gray-800">{fmtPace(act.avg_pace_s_per_km)}</div>
+              <div className="text-xs text-gray-400">avg pace</div>
+            </div>
+            {act.avg_hr && (
+              <div>
+                <div className="text-2xl font-bold text-red-500">{act.avg_hr}</div>
+                <div className="text-xs text-gray-400">bpm avg</div>
+              </div>
+            )}
+          </div>
+          {act.notes && (
+            <p className="text-sm text-gray-500 mt-2 line-clamp-2">{act.notes}</p>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 // ── main Dashboard ────────────────────────────────────────────────────────────
 
 const PERIODS = ["week", "month", "year", "all"] as const;
@@ -262,30 +294,29 @@ type Period = (typeof PERIODS)[number];
 
 export default function Dashboard() {
   const [period, setPeriod] = useState<Period>("week");
-  const [loadDays, setLoadDays] = useState(90);
   const { fmtDist, fmtPace, fmtElev } = useUnits();
 
   const { data: summary } = useQuery({
     queryKey: ["stats-summary", period],
     queryFn: () => getStatsSummary(period),
-  });
-
-  const { data: vdotData } = useQuery({
-    queryKey: ["vdot"],
-    queryFn: getVdot,
+    staleTime: Infinity,  // static file — only changes after a write
   });
 
   const { data: activities } = useQuery({
     queryKey: ["activities"],
     queryFn: getActivities,
+    staleTime: Infinity,  // static file — only changes after a write
   });
 
-  const recentActs: Activity[] = activities ? activities.slice(0, 8) : [];
-
-  const zones = vdotData?.pace_zones_s_per_km;
+  const allActs: Activity[] = activities ?? [];
+  const latestAct = allActs[0] ?? null;
+  const recentActs: Activity[] = allActs.slice(1, 8);
 
   return (
     <div className="p-4 max-w-5xl mx-auto space-y-6">
+
+      {/* Goals — always at top */}
+      <GoalsWidget />
 
       {/* Period toggle */}
       <div className="flex items-center gap-2">
@@ -304,22 +335,11 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <GoalsWidget />
-
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard
-          label="Runs"
-          value={summary?.count ?? "–"}
-        />
-        <StatCard
-          label="Distance"
-          value={summary ? fmtDist(summary.total_distance_km * 1000) : "–"}
-        />
-        <StatCard
-          label="Time"
-          value={summary ? fmtTime(summary.total_duration_s) : "–"}
-        />
+        <StatCard label="Runs"     value={summary?.count ?? "–"} />
+        <StatCard label="Distance" value={summary ? fmtDist(summary.total_distance_km * 1000) : "–"} />
+        <StatCard label="Time"     value={summary ? fmtTime(summary.total_duration_s) : "–"} />
         <StatCard
           label="Avg pace"
           value={fmtPace(summary?.avg_pace_s_per_km ?? null)}
@@ -327,92 +347,31 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* Training load chart */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700">Training Load (CTL / ATL / TSB)</h2>
-            <div className="flex gap-1">
-              {[30, 60, 90].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setLoadDays(d)}
-                  className={`px-2 py-0.5 text-xs rounded border ${
-                    loadDays === d
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "text-gray-500 border-gray-300 hover:border-blue-400"
-                  }`}
-                >
-                  {d}d
-                </button>
-              ))}
-            </div>
-          </div>
-          <TrainingLoadChart days={loadDays} />
+      {/* Most recent activity — large card */}
+      {latestAct && (
+        <div className="border-l-4 border-blue-500 pl-3">
+          <h2 className="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-2">Most Recent Run</h2>
+          <FeaturedActivity act={latestAct} />
         </div>
+      )}
 
-        {/* VDOT + pace zones + personal bests */}
-        <div className="flex flex-col gap-4">
-
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
-          <div>
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Current VDOT</div>
-            <div className="text-3xl font-bold text-blue-600">
-              {vdotData?.vdot ?? "–"}
-            </div>
-            {vdotData?.race_predictions_s && (
-              <div className="mt-2 space-y-0.5">
-                {Object.entries(vdotData.race_predictions_s).map(([dist, s]) => (
-                  <div key={dist} className="flex justify-between text-xs text-gray-500">
-                    <span className="uppercase">{dist}</span>
-                    <span className="font-mono">{s ? fmtTime(s as number) : "–"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {zones && (
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Pace Zones</div>
-              <ZoneRow label="Easy" pace={`${fmtPace(zones.easy_hi)} – ${fmtPace(zones.easy_lo)}`} color="bg-green-400" />
-              <ZoneRow label="Marathon" pace={fmtPace(zones.marathon)} color="bg-blue-400" />
-              <ZoneRow label="Threshold" pace={fmtPace(zones.threshold)} color="bg-yellow-400" />
-              <ZoneRow label="Interval" pace={fmtPace(zones.interval)} color="bg-orange-400" />
-              <ZoneRow label="Reps" pace={fmtPace(zones.repetition)} color="bg-red-500" />
-            </div>
-          )}
-        </div>
-
-        <PersonalBests />
-
-        </div>
-      </div>
+      {/* Personal bests */}
+      <PersonalBests />
 
       {/* Recent activities */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-semibold text-gray-700">Recent Activities</h2>
-          <Link to="/activities" className="text-xs text-blue-600 hover:underline">
-            View all →
-          </Link>
-        </div>
-        {recentActs.length === 0 ? (
-          <div className="text-sm text-gray-400 py-4 text-center">
-            No activities yet.{" "}
-            <Link to="/activities" className="text-blue-600 hover:underline">
-              Upload a .fit file
-            </Link>
+      {recentActs.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-gray-700">Recent Activities</h2>
+            <Link to="/activities" className="text-xs text-blue-600 hover:underline">View all →</Link>
           </div>
-        ) : (
           <div className="space-y-2">
             {recentActs.map((act) => (
               <ActivityRow key={act.id} act={act} />
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
