@@ -233,6 +233,10 @@ def _rebuild_plans(session: Session, static_dir: Path) -> None:
     plans = session.exec(select(TrainingPlan)).all()
     _write_json(static_dir / "plans.json", [p.model_dump() for p in plans])
 
+    # Workout statuses (today/missed/future) are computed at rebuild time and
+    # baked into the static file. Statuses become stale if the file is not
+    # rebuilt the next day. For this personal dashboard, the next upload or
+    # write will trigger a rebuild, keeping staleness bounded.
     today = date.today()
     for plan in plans:
         workouts = session.exec(
@@ -305,12 +309,12 @@ def bg_rebuild_after_delete(activity_id: int, static_dir: Path = STATIC_DIR) -> 
         print(f"[builder] bg_rebuild_after_delete failed: {exc}")
 
 
-def bg_rebuild_after_activity_update(activity_id: int) -> None:
+def bg_rebuild_after_activity_update(activity_id: int, static_dir: Path = STATIC_DIR) -> None:
     """Call after notes/rpe/strava_id updated."""
     try:
         with _new_session() as session:
-            rebuild_activity(activity_id, session)
-            _rebuild_activities(session, STATIC_DIR)
+            rebuild_activity(activity_id, session, static_dir=static_dir)
+            _rebuild_activities(session, static_dir)
     except Exception as exc:
         print(f"[builder] bg_rebuild_after_activity_update failed: {exc}")
 

@@ -103,6 +103,29 @@ def test_rebuild_all(session, act, tmp_path):
     assert (tmp_path / "dashboard.json").exists()
 
 
+def test_bg_rebuild_after_activity_update_rewrites_files(session, act, tmp_path, monkeypatch):
+    from app.services import builder
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _fake_session():
+        yield session
+
+    monkeypatch.setattr(builder, "_new_session", _fake_session)
+
+    # Update the activity
+    act.notes = "felt great"
+    session.add(act)
+    session.commit()
+
+    builder.bg_rebuild_after_activity_update(act.id, static_dir=tmp_path)
+
+    assert (tmp_path / f"activity-{act.id}.json").exists()
+    assert (tmp_path / "activities.json").exists()
+    data = json.loads((tmp_path / f"activity-{act.id}.json").read_text())
+    assert data["activity"]["notes"] == "felt great"
+
+
 def test_bg_rebuild_after_delete_removes_files(session, act, tmp_path, monkeypatch):
     """Verify bg_rebuild_after_delete deletes per-activity files."""
     from contextlib import contextmanager
