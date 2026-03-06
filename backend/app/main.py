@@ -9,14 +9,24 @@ from apscheduler.schedulers.background import BackgroundScheduler
 scheduler = BackgroundScheduler()
 
 
-def _warm_all_caches():
-    """Run in a background thread at startup to pre-populate all TTL caches."""
+def _startup_rebuild():
+    """
+    On first startup (no activities.json), run a full static rebuild.
+    On subsequent starts, warm the in-process TTL caches only.
+    """
     from app.database import Session, engine
+    from app.services.builder import STATIC_DIR, rebuild_all
     from app.routers.activities import warm_cache as warm_activities
     from app.routers.stats import warm_cache as warm_stats
+
     with Session(engine) as session:
-        warm_activities(session)
-        warm_stats(session)
+        if not (STATIC_DIR / "activities.json").exists():
+            print("[startup] Static files missing — running full rebuild...")
+            rebuild_all(session)
+            print("[startup] Rebuild complete.")
+        else:
+            warm_activities(session)
+            warm_stats(session)
 
 
 @asynccontextmanager
@@ -29,7 +39,7 @@ async def lifespan(app: FastAPI):
     if COROS_EMAIL:
         scheduler.add_job(_sync_coros, "interval", minutes=30)
     scheduler.start()
-    threading.Thread(target=_warm_all_caches, daemon=True).start()
+    threading.Thread(target=_startup_rebuild, daemon=True).start()
     yield
     scheduler.shutdown()
 

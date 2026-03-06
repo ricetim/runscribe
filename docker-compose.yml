@@ -11,6 +11,8 @@ services:
     build: ./frontend
     ports:
       - "80:80"
+    volumes:
+      - ./data:/data
     depends_on:
       - backend
     restart: unless-stopped
