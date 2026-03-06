@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select, func
 from app.database import get_session
 from app.models import Shoe, ActivityShoe, Activity
+from app.services.builder import bg_rebuild_globals
 
 router = APIRouter(prefix="/api/shoes", tags=["shoes"])
 
@@ -21,15 +22,16 @@ def list_shoes(session: Session = Depends(get_session)):
 
 
 @router.post("", status_code=201)
-def create_shoe(shoe: Shoe, session: Session = Depends(get_session)):
+def create_shoe(shoe: Shoe, background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     session.add(shoe)
     session.commit()
     session.refresh(shoe)
+    background_tasks.add_task(bg_rebuild_globals)
     return shoe
 
 
 @router.patch("/{shoe_id}")
-def update_shoe(shoe_id: int, data: dict, session: Session = Depends(get_session)):
+def update_shoe(shoe_id: int, data: dict, background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     shoe = session.get(Shoe, shoe_id)
     if not shoe:
         raise HTTPException(status_code=404)
@@ -39,4 +41,5 @@ def update_shoe(shoe_id: int, data: dict, session: Session = Depends(get_session
     session.add(shoe)
     session.commit()
     session.refresh(shoe)
+    background_tasks.add_task(bg_rebuild_globals)
     return shoe

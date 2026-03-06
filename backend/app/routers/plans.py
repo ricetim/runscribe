@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from app.database import get_session
 from app.models import TrainingPlan, PlannedWorkout
+from app.services.builder import bg_rebuild_globals
 from app.services.training_plans.daniels import generate_daniels_plan, generate_daniels_phase_plan
 from app.services.training_plans.pfitzinger import generate_pfitzinger_plan
 from datetime import date, timedelta
@@ -15,7 +16,7 @@ def list_plans(session: Session = Depends(get_session)):
 
 
 @router.post("", status_code=201)
-def create_plan(data: dict, session: Session = Depends(get_session)):
+def create_plan(data: dict, background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     source = data.get("source")
     race_date_raw = data.get("goal_race_date")
     goal_race_date = date.fromisoformat(race_date_raw) if race_date_raw else None
@@ -66,6 +67,7 @@ def create_plan(data: dict, session: Session = Depends(get_session)):
 
     session.commit()
     session.refresh(plan)
+    background_tasks.add_task(bg_rebuild_globals)
     return plan
 
 
@@ -105,7 +107,7 @@ def get_workouts(plan_id: int, session: Session = Depends(get_session)):
 
 @router.patch("/{plan_id}/workouts/{workout_id}")
 def update_workout(plan_id: int, workout_id: int, data: dict,
-                   session: Session = Depends(get_session)):
+                   background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     workout = session.get(PlannedWorkout, workout_id)
     if not workout or workout.training_plan_id != plan_id:
         raise HTTPException(status_code=404)
@@ -114,11 +116,12 @@ def update_workout(plan_id: int, workout_id: int, data: dict,
     session.add(workout)
     session.commit()
     session.refresh(workout)
+    background_tasks.add_task(bg_rebuild_globals)
     return workout
 
 
 @router.delete("/{plan_id}", status_code=204)
-def delete_plan(plan_id: int, session: Session = Depends(get_session)):
+def delete_plan(plan_id: int, background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     plan = session.get(TrainingPlan, plan_id)
     if not plan:
         raise HTTPException(status_code=404)
@@ -128,3 +131,4 @@ def delete_plan(plan_id: int, session: Session = Depends(get_session)):
         session.delete(w)
     session.delete(plan)
     session.commit()
+    background_tasks.add_task(bg_rebuild_globals)

@@ -1,20 +1,40 @@
 import shutil
+import time as _time
 import uuid
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.config import DATA_DIR
 from app.database import get_session
-from app.models import Activity, DataPoint, Photo, PlannedWorkout
+from app.models import Activity, DataPoint, Photo, PlannedWorkout, Lap
 from app.services.fit_parser import parse_fit_file
+from app.services.builder import bg_rebuild_after_upload, bg_rebuild_after_delete, bg_rebuild_after_activity_update
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
+
+# Server-side cache for the activities list (includes GPS tracks — expensive to build)
+_list_cache: dict = {"data": None, "ts": 0.0}
+_LIST_TTL = 300  # 5 minutes — activities only change on upload/delete
+
+
+def _invalidate_list_cache() -> None:
+    _list_cache["data"] = None
+
+
+def warm_cache(session: Session) -> None:
+    """Pre-populate the activities list cache. Called at startup."""
+    if _list_cache["data"] is not None:
+        return
+    try:
+        list_activities(session)
+    except Exception:
+        pass  # Don't crash startup if warmup fails
 
 
 class ActivitySummary(BaseModel):
@@ -26,6 +46,7 @@ class ActivitySummary(BaseModel):
     distance_m: float
     duration_s: int
     elevation_gain_m: float
+    elevation_loss_m: Optional[float] = None
     avg_hr: Optional[int] = None
     avg_pace_s_per_km: Optional[float] = None
     sport_type: str
@@ -47,6 +68,10 @@ def _downsample(points: list[list[float]], max_points: int = 150) -> list[list[f
 
 @router.get("", response_model=list[ActivitySummary])
 def list_activities(session: Session = Depends(get_session)):
+    now = _time.monotonic()
+    if _list_cache["data"] is not None and now - _list_cache["ts"] < _LIST_TTL:
+        return _list_cache["data"]
+
     activities = session.exec(
         select(Activity).order_by(Activity.started_at.desc())
     ).all()
@@ -76,7 +101,7 @@ def list_activities(session: Session = Depends(get_session)):
     ).all()
     planned_type_by_activity = {row[0]: row[1] for row in planned_rows}
 
-    return [
+    result = [
         ActivitySummary(
             id=a.id,
             source=a.source,
@@ -97,6 +122,29 @@ def list_activities(session: Session = Depends(get_session)):
         )
         for a in activities
     ]
+    _list_cache["data"] = result
+    _list_cache["ts"] = now
+    return result
+
+
+@router.get("/{activity_id}/full")
+def get_activity_full(activity_id: int, session: Session = Depends(get_session)):
+    """Combined endpoint: activity + laps + compact track in one request."""
+    act = session.get(Activity, activity_id)
+    if not act:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    laps = session.exec(
+        select(Lap).where(Lap.activity_id == activity_id).order_by(Lap.lap_number)
+    ).all()
+    rows = session.exec(
+        select(DataPoint.lat, DataPoint.lon, DataPoint.speed_m_s)
+        .where(DataPoint.activity_id == activity_id)
+        .where(DataPoint.lat.is_not(None))
+        .where(DataPoint.lon.is_not(None))
+        .order_by(DataPoint.timestamp)
+    ).all()
+    track = [[r[0], r[1], r[2]] for r in rows]
+    return {"activity": act, "laps": laps, "track": track}
 
 
 @router.get("/{activity_id}", response_model=Activity)
@@ -118,6 +166,32 @@ def get_datapoints(activity_id: int, session: Session = Depends(get_session)):
     ).all()
 
 
+@router.get("/{activity_id}/laps")
+def get_laps(activity_id: int, session: Session = Depends(get_session)):
+    if not session.get(Activity, activity_id):
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return session.exec(
+        select(Lap)
+        .where(Lap.activity_id == activity_id)
+        .order_by(Lap.lap_number)
+    ).all()
+
+
+@router.get("/{activity_id}/track")
+def get_track(activity_id: int, session: Session = Depends(get_session)):
+    """Compact GPS track: [[lat, lon, speed_m_s_or_null], ...] — fast-loading for map."""
+    if not session.get(Activity, activity_id):
+        raise HTTPException(status_code=404, detail="Activity not found")
+    rows = session.exec(
+        select(DataPoint.lat, DataPoint.lon, DataPoint.speed_m_s)
+        .where(DataPoint.activity_id == activity_id)
+        .where(DataPoint.lat.is_not(None))
+        .where(DataPoint.lon.is_not(None))
+        .order_by(DataPoint.timestamp)
+    ).all()
+    return [[r[0], r[1], r[2]] for r in rows]
+
+
 @router.get("/{activity_id}/photos")
 def get_photos(activity_id: int, session: Session = Depends(get_session)):
     if not session.get(Activity, activity_id):
@@ -129,6 +203,7 @@ def get_photos(activity_id: int, session: Session = Depends(get_session)):
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 def upload_fit(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ):
@@ -142,35 +217,49 @@ def upload_fit(
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=f"Cannot parse FIT file: {e}")
 
-    paces = [
-        1000 / dp["speed_m_s"]
-        for dp in result.datapoints
-        if dp.get("speed_m_s") and dp["speed_m_s"] > 0
-    ]
+    avg_pace = result.duration_s / (result.distance_m / 1000) if result.distance_m > 0 else None
     act = Activity(
         source="manual_upload",
         started_at=result.started_at,
         distance_m=result.distance_m,
         duration_s=result.duration_s,
         elevation_gain_m=result.elevation_gain_m,
+        elevation_loss_m=result.elevation_loss_m,
         avg_hr=result.avg_hr,
         sport_type=result.sport_type,
         fit_file_path=str(dest),
-        avg_pace_s_per_km=sum(paces) / len(paces) if paces else None,
+        avg_pace_s_per_km=round(avg_pace, 1) if avg_pace else None,
     )
     session.add(act)
     session.flush()
 
     for dp in result.datapoints:
         session.add(DataPoint(activity_id=act.id, **dp))
+    for lap in result.laps:
+        session.add(Lap(
+            activity_id=act.id,
+            lap_number=lap.lap_number,
+            start_elapsed_s=lap.start_elapsed_s,
+            end_elapsed_s=lap.end_elapsed_s,
+            distance_m=lap.distance_m,
+            duration_s=lap.duration_s,
+            avg_hr=lap.avg_hr,
+            avg_pace_s_per_km=lap.avg_pace_s_per_km,
+            elevation_gain_m=lap.elevation_gain_m,
+        ))
 
     session.commit()
     session.refresh(act)
+    _invalidate_list_cache()
+    from app.routers.stats import _invalidate_pb_cache, _invalidate_stats_cache
+    _invalidate_pb_cache()
+    _invalidate_stats_cache()
+    background_tasks.add_task(bg_rebuild_after_upload, act.id)
     return act
 
 
 @router.delete("/{activity_id}", status_code=204)
-def delete_activity(activity_id: int, session: Session = Depends(get_session)):
+def delete_activity(activity_id: int, background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     act = session.get(Activity, activity_id)
     if not act:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -179,12 +268,18 @@ def delete_activity(activity_id: int, session: Session = Depends(get_session)):
         session.delete(dp)
     session.delete(act)
     session.commit()
+    _invalidate_list_cache()
+    from app.routers.stats import _invalidate_pb_cache, _invalidate_stats_cache
+    _invalidate_pb_cache()
+    _invalidate_stats_cache()
+    background_tasks.add_task(bg_rebuild_after_delete, activity_id)
 
 
 @router.patch("/{activity_id}")
 def update_activity(
     activity_id: int,
     data: dict,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
 ):
     act = session.get(Activity, activity_id)
@@ -196,4 +291,5 @@ def update_activity(
     session.add(act)
     session.commit()
     session.refresh(act)
+    background_tasks.add_task(bg_rebuild_after_activity_update, activity_id)
     return act
