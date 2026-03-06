@@ -263,7 +263,6 @@ def delete_activity(activity_id: int, background_tasks: BackgroundTasks, session
     act = session.get(Activity, activity_id)
     if not act:
         raise HTTPException(status_code=404, detail="Activity not found")
-    session.exec(select(DataPoint).where(DataPoint.activity_id == activity_id))
     for dp in session.exec(select(DataPoint).where(DataPoint.activity_id == activity_id)).all():
         session.delete(dp)
     session.delete(act)
@@ -291,5 +290,6 @@ def update_activity(
     session.add(act)
     session.commit()
     session.refresh(act)
+    _invalidate_list_cache()
     background_tasks.add_task(bg_rebuild_after_activity_update, activity_id)
     return act
