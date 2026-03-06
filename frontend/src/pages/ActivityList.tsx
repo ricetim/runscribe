@@ -82,7 +82,12 @@ export default function ActivityList() {
 
   const upload = useMutation({
     mutationFn: uploadFit,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["activities"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["activities"] });
+      qc.invalidateQueries({ queryKey: ["stats-summary"] });
+      qc.invalidateQueries({ queryKey: ["personal-bests"] });
+      qc.invalidateQueries({ queryKey: ["vdot"] });
+    },
   });
 
   // Filter + search
