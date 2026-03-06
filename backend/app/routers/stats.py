@@ -2,6 +2,9 @@
 Stats router: aggregate statistics, training load (ATL/CTL/TSB), VDOT,
 pace zones, and per-activity analytics.
 """
+import math
+import time as _time
+from collections import namedtuple
 from datetime import date, timedelta
 from typing import Optional
 
@@ -23,6 +26,37 @@ from app.services.analytics import (
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
+# ---------------------------------------------------------------------------
+# Server-side TTL caches for expensive aggregate endpoints
+# ---------------------------------------------------------------------------
+
+_summary_cache: dict = {}   # keyed by period string
+_SUMMARY_TTL = 300          # 5 minutes
+
+_tload_cache: dict = {}     # keyed by days int
+_TLOAD_TTL = 300            # 5 minutes
+
+_vdot_cache: dict = {"data": None, "ts": 0.0}
+_VDOT_TTL = 900             # 15 minutes
+
+
+def _invalidate_stats_cache() -> None:
+    """Invalidate all stats caches — call after a new activity is imported."""
+    _summary_cache.clear()
+    _tload_cache.clear()
+    _vdot_cache["data"] = None
+
+
+def warm_cache(session: Session) -> None:
+    """Pre-populate all stats caches. Called at startup."""
+    try:
+        get_summary(period="week", session=session)
+        get_summary(period="month", session=session)
+        get_vdot(session=session)
+        get_personal_bests(session=session)
+    except Exception:
+        pass  # Don't crash startup if warmup fails
+
 
 # ---------------------------------------------------------------------------
 # Helper: build TSS-by-date dict from all activities in the DB
@@ -41,7 +75,6 @@ def _build_tss_by_date(session: Session) -> dict[date, float]:
             hr_rest, hr_max = profile.hr_rest, profile.hr_max
             hr_range = hr_max - hr_rest
             delta_hr = max(0.0, min((act.avg_hr - hr_rest) / hr_range, 1.0))
-            import math
             b = 1.92
             trimp = (act.duration_s / 60.0) * delta_hr * math.exp(b * delta_hr)
         else:
@@ -65,6 +98,11 @@ def get_summary(
     Aggregate run counts, distance, duration, elevation for a time period.
     period: 'week' | 'month' | 'year' | 'all'
     """
+    now = _time.monotonic()
+    cached = _summary_cache.get(period)
+    if cached and now - cached["ts"] < _SUMMARY_TTL:
+        return cached["data"]
+
     today = date.today()
     if period == "week":
         since = today - timedelta(days=7)
@@ -86,7 +124,7 @@ def get_summary(
     avg_pace = (sum(a.avg_pace_s_per_km for a in acts if a.avg_pace_s_per_km)
                 / max(1, sum(1 for a in acts if a.avg_pace_s_per_km)))
 
-    return {
+    result = {
         "period": period,
         "count": count,
         "total_distance_km": round(total_km, 2),
@@ -94,6 +132,8 @@ def get_summary(
         "total_elevation_m": round(total_elev, 1),
         "avg_pace_s_per_km": round(avg_pace, 1) if avg_pace else None,
     }
+    _summary_cache[period] = {"data": result, "ts": now}
+    return result
 
 
 @router.get("/training-load")
@@ -104,12 +144,17 @@ def get_training_load(
     """
     Return daily ATL, CTL, TSB (training load) for the last `days` days.
     """
+    now = _time.monotonic()
+    cached = _tload_cache.get(days)
+    if cached and now - cached["ts"] < _TLOAD_TTL:
+        return cached["data"]
+
     tss_by_date = _build_tss_by_date(session)
     today = date.today()
     start = today - timedelta(days=days)
     loads = compute_training_loads(tss_by_date, start_date=start, end_date=today)
 
-    return [
+    result = [
         {
             "date": d.isoformat(),
             "ctl": round(v.ctl, 1),
@@ -119,6 +164,8 @@ def get_training_load(
         }
         for d, v in sorted(loads.items())
     ]
+    _tload_cache[days] = {"data": result, "ts": now}
+    return result
 
 
 @router.get("/vdot")
@@ -133,6 +180,10 @@ def get_vdot(session: Session = Depends(get_session)):
     Falls back to the raw Daniels formula (best performance) only when no
     HR data is available — this will underestimate VDOT for easy runs.
     """
+    now = _time.monotonic()
+    if _vdot_cache["data"] is not None and now - _vdot_cache["ts"] < _VDOT_TTL:
+        return _vdot_cache["data"]
+
     profile = session.get(UserProfile, 1) or UserProfile()
     hr_max = profile.hr_max
     hr_rest = profile.hr_rest
@@ -180,8 +231,11 @@ def get_vdot(session: Session = Depends(get_session)):
                     pass
 
     if best_vdot is None:
-        return {"vdot": None, "based_on_activity_id": None, "method": method,
-                "hr_max": hr_max, "hr_rest": hr_rest}
+        result = {"vdot": None, "based_on_activity_id": None, "method": method,
+                  "hr_max": hr_max, "hr_rest": hr_rest}
+        _vdot_cache["data"] = result
+        _vdot_cache["ts"] = now
+        return result
 
     zones = compute_pace_zones(best_vdot)
     from app.services.analytics import predict_race_time_s
@@ -193,7 +247,7 @@ def get_vdot(session: Session = Depends(get_session)):
         except Exception:
             predictions[name] = None
 
-    return {
+    result = {
         "vdot": round(best_vdot, 1),
         "based_on_activity_id": best_act_id,
         "method": method,
@@ -210,25 +264,37 @@ def get_vdot(session: Session = Depends(get_session)):
             "repetition": round(zones.repetition),
         },
     }
+    _vdot_cache["data"] = result
+    _vdot_cache["ts"] = now
+    return result
 
 
-def _find_fastest_segment(dps, target_m: float, tol: float = 0.05):
+def _find_fastest_segment(dps, target_m: float, gps_correction: float = 0.0):
     """
-    Two-pointer sliding window over sorted DataPoint objects.
+    Fastest segment of at least target_m * (1 - gps_correction) meters.
+
+    GPS tracks typically under-report distance by 1-3%, so we require only
+    98% of the nominal target distance to avoid false negatives. There is no
+    upper-bound cap — a slightly-long segment is fine; a short one is not.
+
+    For each right pointer, advance left as far right as possible while the
+    span stays >= min_span, minimising elapsed time for that window.
     Returns (time_s, start_elapsed_s, end_elapsed_s) or None.
     """
-    pts = [(dp.distance_m, dp.timestamp) for dp in dps if dp.distance_m is not None and dp.timestamp is not None]
+    min_span = target_m * (1 - gps_correction)
+    pts = [(dp.distance_m, dp.timestamp) for dp in dps
+           if dp.distance_m is not None and dp.timestamp is not None]
     if len(pts) < 2:
         return None
     t0 = pts[0][1]
     best = None
     left = 0
     for right in range(1, len(pts)):
-        span = pts[right][0] - pts[left][0]
-        while span > target_m * (1 + tol) and left < right - 1:
+        # Advance left as far right as possible while span stays >= min_span
+        while left + 1 < right and pts[right][0] - pts[left + 1][0] >= min_span:
             left += 1
-            span = pts[right][0] - pts[left][0]
-        if target_m * (1 - tol) <= span <= target_m * (1 + tol):
+        span = pts[right][0] - pts[left][0]
+        if span >= min_span:
             t = (pts[right][1] - pts[left][1]).total_seconds()
             if t > 0 and (best is None or t < best[0]):
                 t_start = (pts[left][1] - t0).total_seconds()
@@ -237,66 +303,108 @@ def _find_fastest_segment(dps, target_m: float, tol: float = 0.05):
     return best
 
 
+_PB_DISTANCES = [
+    ("400m",     400.0),
+    ("800m",     800.0),
+    ("1k",       1000.0),
+    ("1 mile",   1609.0),
+    ("2 mile",   3218.0),
+    ("3k",       3000.0),
+    ("5k",       5000.0),
+    ("8k",       8000.0),
+    ("10k",      10000.0),
+    ("15k",      15000.0),
+    ("10 mile",  16093.0),
+    ("20k",      20000.0),
+    ("half",     21097.0),
+    ("25k",      25000.0),
+    ("30k",      30000.0),
+    ("marathon", 42195.0),
+]
+
+# Server-side TTL cache — personal bests are expensive to compute
+_pb_cache: dict = {"data": None, "ts": 0.0}
+_PB_TTL = 900  # 15 minutes
+
+_DpRow = namedtuple("_DpRow", ["distance_m", "timestamp"])
+
+
+def _invalidate_pb_cache() -> None:
+    """Call this whenever a new activity is added."""
+    _pb_cache["data"] = None
+
+
 @router.get("/personal-bests")
 def get_personal_bests(session: Session = Depends(get_session)):
     """
     Fastest real segments for common distances (400 m → marathon).
 
-    Uses a two-pointer sliding window over each activity's DataPoints to find
-    the fastest contiguous segment of approximately the target distance
-    (within ±5% tolerance). Scans all activities across all time.
+    Uses a single bulk query + two-pointer sliding window. Results cached
+    server-side for 5 minutes.
     """
-    DISTANCES = [
-        ("400m",     400.0),
-        ("800m",     800.0),
-        ("1 mile",   1609.0),
-        ("5k",       5000.0),
-        ("10k",      10000.0),
-        ("half",     21097.0),
-        ("marathon", 42195.0),
-    ]
+    now = _time.monotonic()
+    if _pb_cache["data"] is not None and now - _pb_cache["ts"] < _PB_TTL:
+        return _pb_cache["data"]
 
-    acts = session.exec(select(Activity)).all()
+    # Activity distances to skip short activities early
+    act_dist = {a[0]: a[1] for a in session.exec(
+        select(Activity.id, Activity.distance_m)
+    ).all()}
 
-    # For each distance, track best (time_s, activity_id, start_elapsed_s, end_elapsed_s)
-    bests: dict[str, tuple[float, int, float, float] | None] = {label: None for label, _ in DISTANCES}
+    # Single bulk query — only distance + timestamp columns, sorted by activity then time.
+    # The (activity_id, timestamp) compound index makes this efficient.
+    rows = session.exec(
+        select(DataPoint.activity_id, DataPoint.distance_m, DataPoint.timestamp)
+        .where(DataPoint.distance_m.is_not(None))
+        .order_by(DataPoint.activity_id, DataPoint.timestamp)
+    ).all()
 
-    for act in acts:
-        # Load datapoints for this activity ordered by timestamp
-        dps = session.exec(
-            select(DataPoint)
-            .where(DataPoint.activity_id == act.id)
-            .order_by(DataPoint.timestamp)
-        ).all()
+    # Group into per-activity point lists
+    dps_by_act: dict[int, list] = {}
+    for act_id, dist_m, ts in rows:
+        if act_id not in dps_by_act:
+            dps_by_act[act_id] = []
+        dps_by_act[act_id].append(_DpRow(dist_m, ts))
 
+    _TOP_N = 20
+    # bests[label] = sorted list of (time_s, act_id, t_start, t_end), ascending by time_s
+    bests: dict[str, list] = {label: [] for label, _ in _PB_DISTANCES}
+
+    for act_id, dps in dps_by_act.items():
         if len(dps) < 2:
             continue
-
-        for label, target_m in DISTANCES:
-            # Skip activities too short to possibly contain this segment (with tolerance)
-            if act.distance_m < target_m * 0.95:
+        total_dist = act_dist.get(act_id, 0.0)
+        for label, target_m in _PB_DISTANCES:
+            if total_dist < target_m:
                 continue
-
             result = _find_fastest_segment(dps, target_m)
             if result is None:
                 continue
-
             time_s, t_start, t_end = result
-            if bests[label] is None or time_s < bests[label][0]:
-                bests[label] = (time_s, act.id, t_start, t_end)
+            bucket = bests[label]
+            # Keep only top N; discard if slower than current worst
+            if len(bucket) < _TOP_N or time_s < bucket[-1][0]:
+                bucket.append((time_s, act_id, t_start, t_end))
+                bucket.sort(key=lambda x: x[0])
+                if len(bucket) > _TOP_N:
+                    bucket.pop()
 
     out = {}
-    for label, _ in DISTANCES:
-        b = bests[label]
-        if b is None:
-            out[label] = None
-        else:
-            out[label] = {
-                "time_s": int(round(b[0])),
-                "activity_id": b[1],
-                "start_elapsed_s": b[2],
-                "end_elapsed_s": b[3],
+    for label, _ in _PB_DISTANCES:
+        entries = bests[label]
+        out[label] = [
+            {
+                "rank": i + 1,
+                "time_s": int(round(e[0])),
+                "activity_id": e[1],
+                "start_elapsed_s": e[2],
+                "end_elapsed_s": e[3],
             }
+            for i, e in enumerate(entries)
+        ] or None
+
+    _pb_cache["data"] = out
+    _pb_cache["ts"] = now
     return out
 
 
