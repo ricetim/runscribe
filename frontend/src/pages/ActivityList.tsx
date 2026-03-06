@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getActivities, uploadFit } from "../api/client";
+import { getActivities, uploadFit, getActivityFull, getDataPoints } from "../api/client";
 import { Activity } from "../types";
 import { useUnits } from "../contexts/UnitsContext";
 import RouteThumbnail from "../components/RouteThumbnail";
 import RpeBadge from "../components/RpeBadge";
+
+const PAGE_SIZE = 20;
 
 function formatDuration(s: number): string {
   const h = Math.floor(s / 3600);
@@ -27,9 +30,51 @@ function formatWorkoutName(sportType: string, plannedWorkoutType?: string | null
     .join(" ");
 }
 
+type QuickFilter = "all" | "hard" | "easy" | "race" | "long";
+
+const QUICK_FILTERS: { key: QuickFilter; label: string }[] = [
+  { key: "all",  label: "All" },
+  { key: "hard", label: "Hard Effort" },
+  { key: "easy", label: "Easy" },
+  { key: "race", label: "Race" },
+  { key: "long", label: "Long Run" },
+];
+
+function matchesFilter(a: Activity, filter: QuickFilter): boolean {
+  switch (filter) {
+    case "all":  return true;
+    case "hard": return a.rpe != null && a.rpe >= 4;
+    case "easy": return a.rpe != null && a.rpe <= 2;
+    case "race": {
+      const haystack = [a.name, a.notes, a.planned_workout_type].join(" ").toLowerCase();
+      return haystack.includes("race") || haystack.includes("5k") || haystack.includes("10k") ||
+             haystack.includes("half marathon") || haystack.includes("marathon");
+    }
+    case "long": {
+      // 15 km / ~9.3 mi threshold for "long"
+      return a.distance_m >= 15000;
+    }
+  }
+}
+
+function matchesSearch(a: Activity, q: string): boolean {
+  if (!q) return true;
+  const lower = q.toLowerCase();
+  return (
+    (a.name ?? "").toLowerCase().includes(lower) ||
+    (a.notes ?? "").toLowerCase().includes(lower) ||
+    (a.planned_workout_type ?? "").toLowerCase().includes(lower) ||
+    a.sport_type.toLowerCase().includes(lower)
+  );
+}
+
 export default function ActivityList() {
   const qc = useQueryClient();
   const { fmtDist, fmtPace } = useUnits();
+  const [search, setSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [page, setPage] = useState(1);
+
   const { data: activities = [], isLoading } = useQuery<Activity[]>({
     queryKey: ["activities"],
     queryFn: getActivities,
@@ -40,9 +85,30 @@ export default function ActivityList() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["activities"] }),
   });
 
+  // Filter + search
+  const filtered = activities.filter(
+    (a) => matchesFilter(a, quickFilter) && matchesSearch(a, search)
+  );
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const clampedPage = Math.min(page, totalPages);
+  const pageStart = (clampedPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+  function handleSearchChange(val: string) {
+    setSearch(val);
+    setPage(1);
+  }
+
+  function handleFilterChange(f: QuickFilter) {
+    setQuickFilter(f);
+    setPage(1);
+  }
+
   return (
     <div className="p-4 max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Activities</h1>
         <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
           {upload.isPending ? "Uploading…" : "Upload .fit"}
@@ -65,6 +131,42 @@ export default function ActivityList() {
         </div>
       )}
 
+      {/* Search + quick filters */}
+      {!isLoading && activities.length > 0 && (
+        <div className="mb-4 space-y-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search activities…"
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+          />
+          <div className="flex gap-2 flex-wrap">
+            {QUICK_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => handleFilterChange(f.key)}
+                className={`px-3 py-1 text-xs rounded-full border font-medium transition-colors ${
+                  quickFilter === f.key
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            {(search || quickFilter !== "all") && (
+              <button
+                onClick={() => { setSearch(""); setQuickFilter("all"); setPage(1); }}
+                className="px-3 py-1 text-xs rounded-full border text-gray-400 border-gray-200 hover:border-gray-400 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {isLoading && <p className="text-gray-500">Loading…</p>}
 
       {!isLoading && activities.length === 0 && (
@@ -74,12 +176,28 @@ export default function ActivityList() {
         </div>
       )}
 
+      {!isLoading && activities.length > 0 && filtered.length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <p className="text-base">No activities match your search.</p>
+          <button
+            onClick={() => { setSearch(""); setQuickFilter("all"); setPage(1); }}
+            className="mt-2 text-sm text-blue-500 hover:underline"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+
       <ul className="space-y-3">
-        {activities.map((a) => (
+        {pageItems.map((a) => (
           <li key={a.id}>
             <Link
               to={`/activities/${a.id}`}
               className="flex items-center gap-4 p-3 bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all"
+              onMouseEnter={() => {
+                qc.prefetchQuery({ queryKey: ["activity-full", a.id], queryFn: () => getActivityFull(a.id), staleTime: Infinity });
+                qc.prefetchQuery({ queryKey: ["datapoints", a.id], queryFn: () => getDataPoints(a.id), staleTime: Infinity });
+              }}
             >
               {/* Route thumbnail */}
               <RouteThumbnail track={a.track} width={112} height={84} />
@@ -125,6 +243,34 @@ export default function ActivityList() {
           </li>
         ))}
       </ul>
+
+      {/* Pagination */}
+      {!isLoading && totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-between text-sm">
+          <span className="text-gray-400">
+            {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={clampedPage === 1}
+              className="px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:border-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Prev
+            </button>
+            <span className="px-3 py-1.5 text-gray-500">
+              {clampedPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={clampedPage === totalPages}
+              className="px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:border-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

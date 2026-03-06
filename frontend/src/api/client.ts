@@ -53,9 +53,6 @@ export const getPlanWorkouts = (id: number) =>
 
 // ── write operations (still go through FastAPI) ───────────────────────────
 
-export const getActivity = (id: number) =>
-  api.get(`/activities/${id}`).then((r) => r.data);
-
 export const uploadFit = (file: File) => {
   const fd = new FormData();
   fd.append("file", file);
