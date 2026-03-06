@@ -294,13 +294,13 @@ def bg_rebuild_after_upload(activity_id: int) -> None:
         print(f"[builder] bg_rebuild_after_upload failed: {exc}")
 
 
-def bg_rebuild_after_delete(activity_id: int) -> None:
+def bg_rebuild_after_delete(activity_id: int, static_dir: Path = STATIC_DIR) -> None:
     """Call after an activity is deleted. Removes per-activity files, rebuilds globals."""
     try:
         for name in (f"activity-{activity_id}.json", f"datapoints-{activity_id}.json"):
-            (STATIC_DIR / name).unlink(missing_ok=True)
+            (static_dir / name).unlink(missing_ok=True)
         with _new_session() as session:
-            rebuild_globals(session)
+            rebuild_globals(session, static_dir)
     except Exception as exc:
         print(f"[builder] bg_rebuild_after_delete failed: {exc}")
 

@@ -101,3 +101,40 @@ def test_rebuild_all(session, act, tmp_path):
     assert (tmp_path / f"activity-{act.id}.json").exists()
     assert (tmp_path / f"datapoints-{act.id}.json").exists()
     assert (tmp_path / "dashboard.json").exists()
+
+
+def test_bg_rebuild_after_delete_removes_files(session, act, tmp_path, monkeypatch):
+    """Verify bg_rebuild_after_delete deletes per-activity files."""
+    from contextlib import contextmanager
+    from app.services import builder
+
+    # Create the activity files
+    rebuild_activity(act.id, session, static_dir=tmp_path)
+    assert (tmp_path / f"activity-{act.id}.json").exists()
+    assert (tmp_path / f"datapoints-{act.id}.json").exists()
+
+    # Monkeypatch _new_session to return the test session as a context manager
+    @contextmanager
+    def _fake_session():
+        yield session
+
+    monkeypatch.setattr(builder, "_new_session", _fake_session)
+
+    # Delete the activity from DB first
+    from app.models import DataPoint
+    from sqlmodel import select as sq_select
+    for dp in session.exec(sq_select(DataPoint).where(DataPoint.activity_id == act.id)).all():
+        session.delete(dp)
+    session.delete(act)
+    session.commit()
+
+    # Call bg_rebuild_after_delete with our tmp_path
+    builder.bg_rebuild_after_delete(act.id, static_dir=tmp_path)
+
+    # Per-activity files should be gone
+    assert not (tmp_path / f"activity-{act.id}.json").exists()
+    assert not (tmp_path / f"datapoints-{act.id}.json").exists()
+    # Global files should be rebuilt
+    assert (tmp_path / "activities.json").exists()
+    acts = json.loads((tmp_path / "activities.json").read_text())
+    assert acts == []
